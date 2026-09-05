@@ -138,6 +138,18 @@ function stopTestAudio(keepBgmSrc = '') {
     if (stopped) hideAudioState();
 }
 
+/** 摘掉测试预览留在共享状态里的一切。合成楼层本身由调用方摘，这里管的是四类跨楼层残留：
+ *  HUD 组件、音频槽、上传的测试图（resolveImage 里优先级最高，会盖住真实楼层的同名图位）、
+ *  以及按剩下的真实楼层重算道具栏。
+ *  注意这四样都不随楼层导航自动复位——共享 store 里没有「属于哪一楼」的概念，
+ *  所以每条离开预览的路径都得显式调一次。 */
+function clearTestResidue() {
+    clearTestHud();
+    stopTestAudio();
+    clearTestImages();
+    try { setItems(floors.flatMap((f) => f.items || [])); } catch (_) {}
+}
+
 function playFragmentAudio(frag) {
     if (!getSetting('audioEnabled')) { stopOneAudio(sfxAudio); stopOneAudio(voiceAudio); return; }
     const list = Array.isArray(frag?.audio) ? frag.audio : [];
@@ -319,10 +331,10 @@ function renderCurrent(animate = false, opts = {}) {
     // 就说明用户已经切回正文，这时把它摘掉。否则它会一直挂着，翻回末尾还能再看到
     // 已经作废的测试内容，而 exitTestPreview 只在切离「测试」Tab 时才触发——
     // 而 #test-render 渲染完就直接 closeDrawer()，那条路径根本不经过 Tab 切换。
-    // HUD 组件与音频都按 origin 定点清：测试与真实消息共用同一套 store / 播放槽，
-    // 只有标了 'test' 的会被摘掉，真实楼层的状态条和 BGM 留着。
+    // HUD 组件 / 音频 / 测试图 / 道具栏都不随导航自动复位，统一交给 clearTestResidue，
+    // 它按 origin 定点清，真实楼层的状态条和 BGM 留着。
     const tail = floors[floors.length - 1];
-    if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestHud(); stopTestAudio(); }
+    if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestResidue(); }
     resetStageState({ keepStream: !!opts.keepStream, preserveScroll: !!opts.preserveScroll });
     const frag = currentFragment();
     if (!frag) { renderEmpty(); return; }
@@ -1970,8 +1982,7 @@ export function loadTestMessage(mes) {
 export function exitTestPreview() {
     if (!floors.some((f) => f.synthetic)) return;
     floors = floors.filter((f) => !f.synthetic);
-    clearTestHud();
-    stopTestAudio();
+    clearTestResidue();
     rebuild(false, 'last');
 }
 
