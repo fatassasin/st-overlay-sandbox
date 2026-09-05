@@ -822,8 +822,8 @@ function buildTestPane() {
         rebuildSlots();
         loadTestMessage(ta.value);
     });
-    // test-assets/ 未随仓库发布（见 .gitignore）。没有这些文件时按钮点了也只会填出一堆 404，
-    // 不如直接藏掉——探一张即可，六张要么都在要么都不在。
+    // test-assets/ 随仓库附带，但别人可能把它删了（这批图是 AI 生成的占位素材，不是必需品）。
+    // 缺文件时按钮点了只会填出一堆 404，不如直接藏掉——探一张即可，六张要么都在要么都不在。
     fetch(builtinTestUrl(BUILTIN_TEST_IMAGES.bg[0]), { method: 'HEAD' })
         .then((r) => { if (!r.ok) q('#test-fill-builtin')?.remove(); })
         .catch(() => q('#test-fill-builtin')?.remove());
