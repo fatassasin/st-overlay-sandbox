@@ -135,4 +135,14 @@ python -m http.server 8000
 
 ## License
 
-[MIT](LICENSE)
+Copyright (c) 2026 Shawn
+
+本项目采用 [CC BY-NC 4.0](LICENSE)（署名 — 非商业性使用 4.0 国际）授权：
+
+- **可以**自由复制、分发、修改、二次创作
+- **必须**保留署名，并注明是否作了修改
+- **不得**用于主要以商业利益或金钱报酬为目的的用途
+
+完整条款以 [`LICENSE`](LICENSE) 的英文原文为准，摘要见 <https://creativecommons.org/licenses/by-nc/4.0/deed.zh>。
+
+> 注：CC BY-NC 不是 OSI 认定的开源许可证。个人自用、分享、改着玩都没问题，但它不允许商业使用，因此本扩展**不能**被收进任何商业整合包或付费分发。若你需要商业授权，请开 issue 联系。
