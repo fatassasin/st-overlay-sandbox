@@ -753,6 +753,28 @@ function buildTestPane() {
         item: '~256×256 透明PNG（显示框约 132×100）',
     };
 
+    // 内置测试图的自动填充状态。
+    // builtinOk：test-assets/ 是否真的在（HEAD 探测的结果，null = 还没探完）。
+    // suppressed：用户显式清掉过的图位，自动填充不再碰它们——否则「清除」按下去，
+    //   下一次重建（改文本、切语言）又给填回来，等于按钮没用。
+    let builtinOk = null;
+    const suppressed = new Set();
+
+    /** 按 role 分池顺序发图。onlyEmpty=true 时只补空位，不覆盖用户自己传的图。
+     *  计数器 used 在跳过之前就自增：这样某个位已有图也不会让后面的位错位取到别的图，
+     *  「第几个 sprite 拿第几张」这个映射与当前填充状态无关，始终稳定。 */
+    const fillBuiltin = (slots, onlyEmpty) => {
+        const used = {};
+        for (const slot of slots) {
+            const pool = BUILTIN_TEST_IMAGES[slot.role];
+            if (!pool || !pool.length) continue;
+            const n = used[slot.role] || 0;
+            used[slot.role] = n + 1;
+            if (onlyEmpty && (getTestImage(slot.key) || suppressed.has(slot.key))) continue;
+            setTestImage(slot.key, builtinTestUrl(pool[n % pool.length]));
+        }
+    };
+
     // 依据当前文本重建图位上传列表
     const rebuildSlots = () => {
         const host = q('#test-slots');
@@ -760,6 +782,8 @@ function buildTestPane() {
         if (!host) return;
         host.innerHTML = '';
         const slots = collectSlots(ta.value);
+        // 默认就把内置图填进去，不用先点按钮。只补空位，所以重建不会冲掉已传的图。
+        if (builtinOk) fillBuiltin(slots, true);
         if (empty) empty.hidden = slots.length > 0;
         for (const slot of slots) {
             const row = document.createElement('div');
@@ -780,6 +804,7 @@ function buildTestPane() {
                 if (!f) return;
                 try {
                     const url = await fileToDataUrl(f);
+                    suppressed.delete(slot.key);
                     setTestImage(slot.key, url);
                     if (thumb) { thumb.src = url; thumb.hidden = false; }
                     loadTestMessage(ta.value);
@@ -787,6 +812,7 @@ function buildTestPane() {
                 e.target.value = '';
             });
             clear.addEventListener('click', () => {
+                suppressed.add(slot.key);   // 别让自动填充在下次重建时又补回来
                 setTestImage(slot.key, null);
                 if (thumb) { thumb.src = ''; thumb.hidden = true; }
                 loadTestMessage(ta.value);
@@ -811,24 +837,27 @@ function buildTestPane() {
     }));
 
     q('#test-fill-builtin').addEventListener('click', () => {
-        const used = {};   // role → 该角色已分配到第几张，用于在池内循环
-        for (const slot of collectSlots(ta.value)) {
-            const pool = BUILTIN_TEST_IMAGES[slot.role];
-            if (!pool || !pool.length) continue;
-            const n = used[slot.role] || 0;
-            used[slot.role] = n + 1;
-            setTestImage(slot.key, builtinTestUrl(pool[n % pool.length]));
-        }
+        suppressed.clear();                             // 显式要求填 → 之前清掉的也一并恢复
+        fillBuiltin(collectSlots(ta.value), false);     // 覆盖式：这是用户主动点的「重来一遍」
         rebuildSlots();
         loadTestMessage(ta.value);
     });
     // test-assets/ 随仓库附带，但别人可能把它删了（这批图是 AI 生成的占位素材，不是必需品）。
     // 缺文件时按钮点了只会填出一堆 404，不如直接藏掉——探一张即可，六张要么都在要么都不在。
+    // 探测是异步的，首次 rebuildSlots() 跑完它才回来，所以成功后要再重建一次补上自动填充。
     fetch(builtinTestUrl(BUILTIN_TEST_IMAGES.bg[0]), { method: 'HEAD' })
-        .then((r) => { if (!r.ok) q('#test-fill-builtin')?.remove(); })
-        .catch(() => q('#test-fill-builtin')?.remove());
+        .then((r) => r.ok)
+        .catch(() => false)
+        .then((ok) => {
+            builtinOk = ok;
+            if (!ok) q('#test-fill-builtin')?.remove();
+            else rebuildSlots();
+        });
     q('#test-clear-imgs').addEventListener('click', () => {
-        for (const slot of collectSlots(ta.value)) setTestImage(slot.key, null);
+        for (const slot of collectSlots(ta.value)) {
+            suppressed.add(slot.key);                   // 否则 rebuildSlots 立刻又填回来
+            setTestImage(slot.key, null);
+        }
         rebuildSlots();
         loadTestMessage(ta.value);
     });

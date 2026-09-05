@@ -622,8 +622,12 @@ export function parseStageMessage(mes, opts = {}) {
                 else pendingItems.push(item);
                 continue;
             }
-            // 裸 <pic>/<fetch> 无用途后缀：pic=生图请求；fetch=只吞路径不渲染
-            if (!mk.role) continue;
+            // 裸 <pic>/<fetch> 无用途后缀：pic=生图请求；fetch=只吞路径不渲染。
+            // 但 <cg> 不能一起丢：它是协议里的一等标签（<cg img="…">caption</cg>），
+            // 由 PAIR_RE 匹配，而 role 只在 MEDIA_RE 那条路上才会被赋值——
+            // 也就是说 <cg> 的 role 恒为 undefined，跟着 pic/fetch 一起 continue
+            // 等于让手写的 <cg> 永远解析不出片段（生图产出的 CG 走 genmedia 分支，不受影响）。
+            if (!mk.role && mk.type !== 'cg') continue;
             lastFrag = {
                 kind: 'cg',
                 raw: label,
