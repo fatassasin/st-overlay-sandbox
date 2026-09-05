@@ -81,6 +81,12 @@ let bgmAudio = null;
 let bgmSrc = '';
 let sfxAudio = null;
 let voiceAudio = null;
+// 来源标记，取值 '' | 'test'。测试预览（合成楼层）起的音频回到正文时要单独停掉：
+// BGM 按协议一直放到被下一条 <bgm> 换掉，没人显式停它就会一直盖在真实聊天上。
+// sfx/voice 通常一响即止，但两者都允许 loop="true"，所以一并记。
+let bgmOrigin = '';
+let sfxOrigin = '';
+let voiceOrigin = '';
 function stopOneAudio(a) { try { if (a) { a.pause(); a.currentTime = 0; } } catch (_) {} }
 function audioVolume(a) {
     const local = Number(a?.volume);
@@ -89,13 +95,15 @@ function audioVolume(a) {
 }
 function playAudio(a, slot) {
     if (!getSetting('audioEnabled') || !a || !a.src) return;
-    if (slot === 'bgm' && bgmAudio && bgmSrc === a.src) { bgmAudio.volume = audioVolume(a); renderAudioState(a, slot); return; }
+    // 正在渲染的楼层是合成楼层 → 这段音频归测试预览所有
+    const origin = currentFloor()?.synthetic ? 'test' : '';
+    if (slot === 'bgm' && bgmAudio && bgmSrc === a.src) { bgmAudio.volume = audioVolume(a); bgmOrigin = origin; renderAudioState(a, slot); return; }
     const el = new Audio(a.src);
     el.volume = audioVolume(a);
     el.loop = !!a.loop;
-    if (slot === 'bgm') { stopOneAudio(bgmAudio); bgmAudio = el; bgmSrc = a.src; }
-    else if (slot === 'voice') { stopOneAudio(voiceAudio); voiceAudio = el; }
-    else { stopOneAudio(sfxAudio); sfxAudio = el; }
+    if (slot === 'bgm') { stopOneAudio(bgmAudio); bgmAudio = el; bgmSrc = a.src; bgmOrigin = origin; }
+    else if (slot === 'voice') { stopOneAudio(voiceAudio); voiceAudio = el; voiceOrigin = origin; }
+    else { stopOneAudio(sfxAudio); sfxAudio = el; sfxOrigin = origin; }
     renderAudioState(a, slot);
     el.play().catch((e) => console.warn('[overlay] 音频播放被浏览器阻止：', e));
 }
@@ -115,6 +123,19 @@ function renderAudioState(a, slot) {
 function hideAudioState() {
     const bar = q('#ov-audio-state');
     if (bar) bar.hidden = true;
+}
+
+/** 停掉测试预览起的音频，真实楼层起的一概不动。
+ *  @param {string} [keepBgmSrc] 若当前测试 BGM 正是这个 src 就留着——测试面板改一个字就
+ *    重渲染一次，同一首曲子没必要每次从头切一刀。 */
+function stopTestAudio(keepBgmSrc = '') {
+    let stopped = false;
+    if (bgmOrigin === 'test' && bgmSrc !== keepBgmSrc) {
+        stopOneAudio(bgmAudio); bgmAudio = null; bgmSrc = ''; bgmOrigin = ''; stopped = true;
+    }
+    if (sfxOrigin === 'test') { stopOneAudio(sfxAudio); sfxAudio = null; sfxOrigin = ''; stopped = true; }
+    if (voiceOrigin === 'test') { stopOneAudio(voiceAudio); voiceAudio = null; voiceOrigin = ''; stopped = true; }
+    if (stopped) hideAudioState();
 }
 
 function playFragmentAudio(frag) {
@@ -156,6 +177,7 @@ export function rebuild(animate = false, landing = 'last', opts = {}) {
     const prev = floors[pos.floorIdx] ? { chatIndex: floors[pos.floorIdx].chatIndex, fragIdx: pos.fragIdx } : null;
     clearTestImages();   // 真实重建：清掉测试 Tab 上传的图，避免污染真实聊天
     clearTestHud();      // 同理清掉测试灌进状态条的组件（真实消息创建的按 origin 保留）
+    stopTestAudio();     // 同理停掉测试起的 BGM/SFX（真实楼层起的按 origin 保留）
     floors = [];
     if (c && Array.isArray(c.chat)) {
         let sceneCarry = undefined;
@@ -297,10 +319,10 @@ function renderCurrent(animate = false, opts = {}) {
     // 就说明用户已经切回正文，这时把它摘掉。否则它会一直挂着，翻回末尾还能再看到
     // 已经作废的测试内容，而 exitTestPreview 只在切离「测试」Tab 时才触发——
     // 而 #test-render 渲染完就直接 closeDrawer()，那条路径根本不经过 Tab 切换。
-    // HUD 组件按 origin 定点清：测试与真实消息的组件共用同一个 store，
-    // 只有标了 'test' 的会被摘掉，真实楼层的状态条留着。
+    // HUD 组件与音频都按 origin 定点清：测试与真实消息共用同一套 store / 播放槽，
+    // 只有标了 'test' 的会被摘掉，真实楼层的状态条和 BGM 留着。
     const tail = floors[floors.length - 1];
-    if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestHud(); }
+    if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestHud(); stopTestAudio(); }
     resetStageState({ keepStream: !!opts.keepStream, preserveScroll: !!opts.preserveScroll });
     const frag = currentFragment();
     if (!frag) { renderEmpty(); return; }
@@ -1917,6 +1939,13 @@ export function loadTestMessage(mes) {
     clearTestHud();  // 先清上一轮测试的组件：新文本若删掉了某个 id，旧节点不该留在状态条里
     const parsed = parseStageMessage(String(mes ?? ''));
     if (!parsed.fragments.length) return;
+    // 停掉上一轮测试的音频。新文本里最后一条 <bgm> 若和正在放的是同一首就留着，
+    // 免得在测试面板里改一个字就把曲子从头切一刀。
+    let nextBgm = '';
+    for (const f of parsed.fragments) {
+        for (const a of (f.audio || [])) if (a.kind === 'bgm' && a.src) nextBgm = a.src;
+    }
+    stopTestAudio(nextBgm);
     // scene 结转：继承当前末楼最后 scene
     let sceneCarry;
     for (let i = floors.length - 1; i >= 0 && !sceneCarry; i--) {
@@ -1942,6 +1971,7 @@ export function exitTestPreview() {
     if (!floors.some((f) => f.synthetic)) return;
     floors = floors.filter((f) => !f.synthetic);
     clearTestHud();
+    stopTestAudio();
     rebuild(false, 'last');
 }
 
