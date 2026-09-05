@@ -27,6 +27,45 @@ SillyTavern 原生是聊天气泡流。这个扩展提供另一种读法：把�
 
 > 注意：SillyTavern 注入扩展 CSS 时不带版本串，`<link>` 已存在就跳过重注。**更新本扩展后必须 Ctrl+Shift+R 硬刷新**，普通 F5 拿到的是缓存的旧样式。
 
+### 可选：服务端插件（虚拟按键 / mic 键位）
+
+设置里的「虚拟按键」要把一次真实的按键送给 Windows 本身（例如让手机端点一下就触发桌面的语音输入热键）。浏览器没有这个权限，所以这一步由一个**服务端插件**代劳。不用这个功能的话整节可以跳过——扩展其余部分不依赖它。
+
+插件**不能**留在扩展目录里，SillyTavern 只从根目录的 `plugins/` 加载服务端插件。把 `server-plugin/` 整个复制过去，并改名为 `st-overlay-sandbox-key`（目录名必须等于插件 id，前端是按这个名字请求 `/api/plugins/st-overlay-sandbox-key/…` 的）：
+
+```bash
+cp -r "data/<你的用户名>/extensions/st-overlay-sandbox/server-plugin" "plugins/st-overlay-sandbox-key"
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item -Recurse "data\<你的用户名>\extensions\st-overlay-sandbox\server-plugin" "plugins\st-overlay-sandbox-key"
+```
+
+复制完目录里应当是这三个文件，无需 `npm install`（没有外部依赖）：
+
+```
+plugins/st-overlay-sandbox-key/
+├── index.mjs        # 注册 GET /status 与 POST /press
+├── package.json     # name: st-overlay-sandbox-key, type: module
+└── send-key.ps1     # 经 SendInput 发送按键
+```
+
+再在 SillyTavern 根目录的 `config.yaml` 里打开服务端插件，然后**重启 SillyTavern 服务端**（这不是前端刷新，必须重启进程）：
+
+```yaml
+enableServerPlugins: true
+```
+
+验证：浏览器访问 `http://<你的ST地址>/api/plugins/st-overlay-sandbox-key/status`，返回 `{"ok":true}` 即为就绪。
+
+几点限制说在前面：
+
+- **仅 Windows**。`index.mjs` 起的是 `powershell.exe`，其他平台 `/status` 会返回 `{"ok":false}`，`/press` 直接 501。
+- 按键走**白名单**（`index.mjs` 里的 `CODE_RE`）：字母、数字、F1–F24、方向键、以及 Enter/Space/Esc/Tab/Backspace/Delete/Home/End/PageUp/PageDown 和左右 Alt/Ctrl/Shift。名字用 [KeyboardEvent.code](https://developer.mozilla.org/docs/Web/API/KeyboardEvent/code) 的写法，例如 `KeyM`、`F13`、`ControlLeft`。
+- 它会**向整个桌面**发送按键，落到哪个窗口取决于当时谁在前台，不限于 SillyTavern。所以别把 SillyTavern 暴露到不受信任的网络上再开这个插件。
+
 ## 打开
 
 四种方式任选：
@@ -126,12 +165,6 @@ python -m http.server 8000
 | `logger.js` | 日志 |
 | `style.css` | 全部样式 |
 | `server-plugin/` | 可选的配套 SillyTavern 服务端插件 |
-
-## 已知限制
-
-- 仅在 Chromium 上做过实际使用；Firefox 路径写了兼容但未系统测试。
-- 正文顶部虚化目前只作用于普通正文模式。
-- 更新后必须硬刷新，见上方安装小节。
 
 ## License
 
