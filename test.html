@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay Sandbox · 视觉小说阅读器测试</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { margin: 0; font-family: system-ui, sans-serif; background: #14141a; color: #ddd; }
+        .page { padding: 24px; max-width: 860px; }
+        button.demo { padding: 8px 14px; cursor: pointer; border-radius: 8px; border: 1px solid #555; background: #2a2a35; color: #ddd; margin: 4px 4px 0 0; }
+        button.demo:hover { background: #34343f; }
+        .seg { display: inline-flex; gap: 0; margin: 4px 4px 0 0; border-radius: 8px; overflow: hidden; border: 1px solid #555; }
+        .seg button { padding: 8px 14px; cursor: pointer; border: none; background: #2a2a35; color: #ddd; }
+        .seg button.on { background: #4a4a5a; color: #fff; }
+        code { background: #222; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+        ul { line-height: 1.7; font-size: 14px; }
+        .row { margin-top: 10px; }
+        .hint { font-size: 12px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1>Overlay Sandbox — 视觉小说阅读器（不依赖 ST）</h1>
+        <p>用假 ctx.chat 验证标签解析、一屏一片段、导航、占位、抽屉、背包、道具、HTML iframe 渲染。</p>
+
+        <div class="row">
+            <span class="hint">测试语言：</span>
+            <span class="seg" id="lang-seg">
+                <button data-lang="zh" class="on">中文</button>
+                <button data-lang="en">English</button>
+            </span>
+        </div>
+
+        <div class="row">
+            <button class="demo" id="show-btn">展开阅读器</button>
+            <button class="demo" id="stream-btn">模拟流式（打字机入场）</button>
+            <button class="demo" id="add-floor-btn">追加一条 AI 楼层</button>
+            <button class="demo" id="add-html-btn">追加整页 HTML 楼层</button>
+        </div>
+
+        <div class="row">
+            <span class="hint">图片位（导入本地图片注入到场景/道具/CG）：</span><br>
+            <label class="demo" for="img-file" style="cursor:pointer;">导入测试图片</label>
+            <input type="file" id="img-file" accept="image/*" hidden />
+            <span class="seg" id="img-target">
+                <button data-t="bg" class="on">场景</button>
+                <button data-t="item">道具</button>
+                <button data-t="cg">CG</button>
+            </span>
+        </div>
+
+        <div class="row">
+            <span class="hint">HUD：</span>
+            <button class="demo" id="hud-add">加血条</button>
+            <button class="demo" id="hud-update">扣血</button>
+            <button class="demo" id="hud-clear">清空 HUD</button>
+        </div>
+
+        <ul>
+            <li><b>左键</b>空白处 = 下一片段；<b>右键</b> = 上一片段（楼层头停）</li>
+            <li><b>滚轮</b>：正文未到边界滚正文；到顶/底继续滚才跨楼层（带提示）</li>
+            <li>右上图标顺序＝抽屉标签（设置/测试/素材）+ 全屏 + 关闭 X；自动折叠</li>
+            <li>右上<b>骰子托盘</b>点击结果写进输入框；<b>背包</b>道具点击同理</li>
+            <li>整页 HTML 楼层用 <code>iframe</code> 沙箱渲染</li>
+        </ul>
+    </div>
+
+    <script type="module">
+        // ============ 双语测试楼层 ============
+        const DATA = {
+            zh: {
+                floors: [
+                    [
+                        '<scene bg="黎明 · 废弃教堂 · 尘埃浮动" fade="6s"/>',
+                        '<narration>光线从屋顶的破洞落下，那里曾经是一位圣徒的脸。</narration>',
+                        '<say char="守门人" pos="left" emo="戒备">「你不该回到这里来。」</say>',
+                        '<item img="生锈的钥匙" pos="float-right">一把钥匙，温热得像刚被人攥过。</item>',
+                        '<overlay>{"op":"add","type":"stat","id":"hp","label":"HP","value":74,"max":100}</overlay>',
+                        '<narration>你握紧了那把钥匙。它在掌心里轻轻震动，仿佛在回应什么。</narration>',
+                        '<cg img="钥匙插入石门，门缝里渗出蓝光">石门应声而开。</cg>',
+                    ].join('\n'),
+                    [
+                        '<scene bg="地下回廊 · 蓝色磷火"/>',
+                        '<say char="守门人" pos="left" emo="低语">「既然你执意如此……跟紧我。」</say>',
+                        '<narration>磷火在墙壁上投下摇曳的影子。你听见远处有水滴落下的声音。</narration>',
+                        '<overlay>{"op":"update","type":"stat","id":"hp","value":61}</overlay>',
+                    ].join('\n'),
+                    '这是一条普通回复，里面没有任何舞台标签。\n\n它应该像正常聊天那样，把**整段内容**完整地显示在一个面板里，而不是被拆成一屏一屏的视觉小说片段。\n\n- 列表项一\n- 列表项二',
+                ],
+                user: '我跟着他走进黑暗。',
+                stream: [
+                    '<scene bg="星舰舱室 · 红色警报灯"/>',
+                    '<narration>警报声撕裂了寂静。红光一明一灭，把你的影子拉得忽长忽短。</narration>',
+                    '<say char="AI" pos="right" emo="急促">「舱压正在下降，我们必须在三分钟内到达逃生舱。」</say>',
+                ].join('\n'),
+                addFloor: '<scene bg="逃生舱 · 冷白光"/>\n<narration>舱门在你身后合拢。你瘫坐下来，听着自己的心跳。</narration>\n<item img="氧气罐">还剩三分之一。</item>',
+            },
+            en: {
+                floors: [
+                    [
+                        '<scene bg="dawn · ruined chapel · drifting dust" fade="6s"/>',
+                        '<narration>Light falls through a hole in the roof where a saint\'s face used to be.</narration>',
+                        '<say char="Warden" pos="left" emo="wary">"You should not have come back here."</say>',
+                        '<item img="rusted key" pos="float-right">A key, warm as if just held.</item>',
+                        '<overlay>{"op":"add","type":"stat","id":"hp","label":"HP","value":74,"max":100}</overlay>',
+                        '<narration>You grip the key. It trembles faintly in your palm, as if answering something.</narration>',
+                        '<cg img="the key slots into stone, blue light bleeding from the seam">The door swings open.</cg>',
+                    ].join('\n'),
+                    [
+                        '<scene bg="underground corridor · blue witchfire"/>',
+                        '<say char="Warden" pos="left" emo="whisper">"Since you insist... stay close to me."</say>',
+                        '<narration>The witchfire throws wavering shadows on the walls. Somewhere, water drips.</narration>',
+                        '<overlay>{"op":"update","type":"stat","id":"hp","value":61}</overlay>',
+                    ].join('\n'),
+                    'This is a plain reply with no stage tags whatsoever.\n\nIt should display like a normal chat message — the **whole thing** in one panel, not split into one-screen visual-novel beats.\n\n- list item one\n- list item two',
+                ],
+                user: 'I follow him into the dark.',
+                stream: [
+                    '<scene bg="starship cabin · red alarm light"/>',
+                    '<narration>The alarm tears the silence apart. Red light pulses, stretching your shadow long and short.</narration>',
+                    '<say char="AI" pos="right" emo="urgent">"Cabin pressure is dropping. We must reach the escape pod within three minutes."</say>',
+                ].join('\n'),
+                addFloor: '<scene bg="escape pod · cold white light"/>\n<narration>The hatch seals behind you. You slump down and listen to your own heartbeat.</narration>\n<item img="oxygen tank">A third left.</item>',
+            },
+        };
+
+        // 整页 HTML 楼层（验证 iframe 沙箱渲染，自带 <style>）
+        const HTML_FLOOR = [
+            '```html',
+            '<!DOCTYPE html><html><head><style>',
+            'body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;',
+            'background:radial-gradient(circle at 50% 30%,#1a2740,#05060a);font-family:system-ui;}',
+            '.card{padding:40px 56px;border-radius:20px;border:1px solid rgba(255,255,255,.15);',
+            'background:rgba(20,24,40,.5);box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center;}',
+            '.card h1{margin:0 0 12px;font-size:28px;color:#cfe3ff;letter-spacing:2px;}',
+            '.card p{margin:0;color:#8fa6c8;}',
+            '</style></head><body><div class="card"><h1>SYSTEM TERMINAL</h1>',
+            '<p>整页 HTML 在隔离 iframe 中渲染，CSS 不会污染 overlay。</p></div></body></html>',
+            '```',
+        ].join('\n');
+
+        let lang = 'zh';
+        function buildChat(l) {
+            const d = DATA[l];
+            return [
+                { mes: d.floors[0], name: 'Narrator', is_user: false },
+                { mes: d.user, name: 'You', is_user: true },
+                { mes: d.floors[1], name: 'Narrator', is_user: false },
+                { mes: d.floors[2], name: 'Narrator', is_user: false },
+            ];
+        }
+        let fakeChat = buildChat(lang);
+
+        // ============ 假 ctx ============
+        const listeners = {};
+        const macros = {};
+        // 关键：ctx 必须是【单例】。真实 ST 的 getContext() 返回稳定对象，
+        //   settings.js getStore() 每次读同一个 extensionSettings，滑条才能持久生效。
+        //   旧版每次调用都新建对象 → extensionSettings 每次都是空 {} → 所有滑条（含打字速度、
+        //   VN 文本高度）写完即丢、读回永远是默认值，故在测试页里「无法改变」。
+        //   fakeChat 是就地 mutate 的稳定数组引用（切语言用 .length=0/push），单例安全。
+        const CTX = {
+            chat: fakeChat,
+            name2: 'Narrator',
+            characterId: 0,
+            characters: [{ avatar: 'none' }],
+            eventSource: { on: (ev, cb) => { (listeners[ev] ||= []).push(cb); } },
+            event_types: {
+                USER_MESSAGE_RENDERED: 'u', CHARACTER_MESSAGE_RENDERED: 'c',
+                MESSAGE_UPDATED: 'mu', MESSAGE_EDITED: 'me', MESSAGE_SWIPED: 'ms',
+                MESSAGE_DELETED: 'md', MESSAGE_SWIPE_DELETED: 'msd',
+                CHAT_CHANGED: 'cc', MORE_MESSAGES_LOADED: 'mml',
+                GENERATION_STARTED: 'gst',
+                STREAM_TOKEN_RECEIVED: 'st', GENERATION_ENDED: 'ge', GENERATION_STOPPED: 'gs',
+                MESSAGE_RECEIVED: 'mr',
+            },
+            messageFormatting: (mes) => String(mes)
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>'),
+            getThumbnailUrl: () => '',
+            // 宏 / slash 桩
+            registerMacro: (k, v) => { macros[k] = v; },
+            executeSlashCommandsWithOptions: async () => ({ pipe: '' }),
+            extensionSettings: {},
+            saveSettingsDebounced: () => {},
+        };
+        window.SillyTavern = { getContext: () => CTX };
+        const emit = (ev, ...a) => (listeners[ev] || []).forEach((cb) => cb(...a));
+
+        const { initOverlay, show, hide, isVisible, getShell, q: ovq } = await import('./overlay.js');
+        const { initBridge, refreshOnOpen } = await import('./bridge.js');
+        const { wireUI } = await import('./ui.js');
+        const { initInventory } = await import('./inventory.js');
+        const { initProps } = await import('./props.js');
+        const { loadSettings, getSetting, setSetting } = await import('./settings.js');
+        const { initAssets } = await import('./assets.js');
+        const { installConsoleCapture } = await import('./logger.js');
+        const { captureMedia } = await import('./media-capture.js');
+
+        installConsoleCapture();
+        initOverlay();
+        initInventory();
+        initProps();
+        const ctx = window.SillyTavern.getContext();
+        loadSettings();
+        initAssets(ctx);
+        initBridge(ctx);
+        wireUI({ onInjectProtocolChange: () => {}, onChromeChange: applyChrome, onMacroChange: () => {} });
+
+        // ============ chrome 接线（test 不走 index.js，这里最小复刻） ============
+        function applyChrome() {
+            const shell = getShell();
+            if (!shell) return;
+            shell.dataset.topbar = getSetting('topbarAutohide') ? 'auto' : 'pinned';
+            shell.dataset.composer = getSetting('composerAutohide') ? 'auto' : 'pinned';
+        }
+        function wireChrome() {
+            const shell = getShell();
+            const close = ovq('#ov-close-btn');
+            if (close) close.addEventListener('click', () => hide());
+            const fs = ovq('#ov-fullscreen-btn');
+            if (fs) fs.addEventListener('click', () => {
+                if (document.fullscreenElement) document.exitFullscreen?.();
+                else document.documentElement.requestFullscreen?.();
+            });
+            const toggle = ovq('#ov-topbar-toggle');
+            if (toggle && shell) toggle.addEventListener('click', () => shell.classList.toggle('ov-topbar-show'));
+            const hot = ovq('#ov-composer-hotzone');
+            const composer = ovq('#ov-composer');
+            const input = ovq('#ov-input');
+            if (shell && hot && composer) {
+                const showC = () => shell.classList.add('ov-composer-show');
+                const hideC = () => { if (input && document.activeElement === input) return; shell.classList.remove('ov-composer-show'); };
+                hot.addEventListener('mouseenter', showC);
+                composer.addEventListener('mouseenter', showC);
+                composer.addEventListener('mouseleave', hideC);
+                if (input) { input.addEventListener('focus', showC); input.addEventListener('blur', () => setTimeout(hideC, 120)); }
+            }
+            applyChrome();
+        }
+        wireChrome();
+
+        // ============ 交互 ============
+        const openReader = () => { show(); refreshOnOpen(); };
+        document.getElementById('show-btn').addEventListener('click', openReader);
+
+        // 语言切换：重建 chat
+        document.getElementById('lang-seg').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            lang = b.dataset.lang;
+            document.querySelectorAll('#lang-seg button').forEach((x) => x.classList.toggle('on', x === b));
+            fakeChat.length = 0; buildChat(lang).forEach((m) => fakeChat.push(m));
+            emit('cc'); if (isVisible()) refreshOnOpen();
+        });
+
+        // 模拟流式
+        document.getElementById('stream-btn').addEventListener('click', () => {
+            openReader();
+            emit('gst');
+            const full = DATA[lang].stream;
+            let i = 0;
+            const timer = setInterval(() => {
+                i += 6;
+                emit('st', full.slice(0, i));
+                if (i >= full.length) {
+                    clearInterval(timer);
+                    fakeChat.push({ mes: full, name: 'Narrator', is_user: false });
+                    emit('ge');
+                }
+            }, 60);
+        });
+
+        document.getElementById('add-floor-btn').addEventListener('click', () => {
+            fakeChat.push({ mes: DATA[lang].addFloor, name: 'Narrator', is_user: false });
+            emit('ge');
+        });
+
+        document.getElementById('add-html-btn').addEventListener('click', () => {
+            fakeChat.push({ mes: HTML_FLOOR, name: 'Narrator', is_user: false });
+            emit('ge');
+            openReader();
+        });
+
+        // 图片位：导入本地图片 → 注入到选定目标（场景/道具/CG）的新楼层
+        let imgTarget = 'bg';
+        document.getElementById('img-target').addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            imgTarget = b.dataset.t;
+            document.querySelectorAll('#img-target button').forEach((x) => x.classList.toggle('on', x === b));
+        });
+        document.getElementById('img-file').addEventListener('change', async (e) => {
+            const f = e.target.files && e.target.files[0]; if (!f) return;
+            const url = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+            // 注入：bg 走 scene、item/cg 走对应标签。占位解析器只读描述，这里直接把图片塞进素材库 + 标签描述。
+            let mes;
+            if (imgTarget === 'bg') mes = `<scene bg="导入图片：${f.name}"/>\n<narration>（已导入背景图片：${f.name}）</narration>`;
+            else if (imgTarget === 'cg') mes = `<cg img="导入图片：${f.name}">导入的 CG：${f.name}</cg>`;
+            else mes = `<scene bg="测试场景"/>\n<item img="导入图片：${f.name}">导入的道具：${f.name}</item>\n<narration>（已导入道具图片）</narration>`;
+            // 也演示 media-capture：把 <img> HTML 丢进去解析
+            const html = `<img src="${url}" title="<pic>prompt=${f.name}|w=512|h=512</pic>">`;
+            console.info('[test] media-capture →', JSON.stringify(captureMedia(html)));
+            fakeChat.push({ mes, name: 'Narrator', is_user: false });
+            emit('ge'); openReader();
+            e.target.value = '';
+        });
+
+        // HUD 控制
+        const hud = (op, extra) => emit('mr', fakeChat.length - 1) || pushHud(op, extra);
+        function pushHud(op, extra) {
+            // 直接构造一条带 <overlay> 的楼层并定稿（演示 HUD 状态条）
+            const json = JSON.stringify(Object.assign({ op }, extra));
+            fakeChat.push({ mes: `<overlay>${json}</overlay>\n<narration>（HUD 操作：${op}）</narration>`, name: 'Narrator', is_user: false });
+            emit('ge');
+        }
+        document.getElementById('hud-add').addEventListener('click', () => pushHud('add', { type: 'progressbar', id: 'mp', label: 'MP', value: 50, max: 100 }));
+        document.getElementById('hud-update').addEventListener('click', () => pushHud('update', { type: 'stat', id: 'hp', value: 30 }));
+        document.getElementById('hud-clear').addEventListener('click', () => pushHud('clear', {}));
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+                e.preventDefault();
+                isVisible() ? hide() : openReader();
+            }
+        });
+    </script>
+</body>
+</html>

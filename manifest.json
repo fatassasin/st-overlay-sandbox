@@ -1,0 +1,8 @@
+{
+  "display_name": "Overlay Sandbox",
+  "loading_order": 100,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Shawn",
+  "version": "0.5.0"
+}

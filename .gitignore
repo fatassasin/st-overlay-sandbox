@@ -1,0 +1,56 @@
+# —— 与本扩展无关的独立子项目 ——
+# 这两个是「用 iPhone 当麦克风」的 C#/iOS 工具，恰好放在了同一个文件夹里。
+# iphone-mic-bluetooth 里还有 23MB 的 bin/obj 编译产物。发布前不要带上。
+iphone-mic-bluetooth/
+iphone-mic-hotspot/
+
+# —— 工具生成物 ——
+graphify-out/
+.agents/
+.codex/
+.claude/
+
+# —— 个人工作笔记（无扩展名，别误提交）——
+myplan
+plan
+temp 选项框
+
+# —— 依赖与构建 ——
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# —— 日志与临时文件 ——
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tmp
+*.bak
+*.orig
+*~
+
+# —— 环境与密钥 ——
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# —— 编辑器 ——
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# —— 操作系统 ——
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini

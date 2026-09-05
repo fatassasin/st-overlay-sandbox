@@ -1,0 +1,1307 @@
+﻿/* style.css — 沉浸式视觉小说阅读器。light DOM，自身样式以 #st-overlay-root 前缀隔离。
+   性能原则：overlay 全屏不透明覆盖，背后 ST 不可见，故【不用 backdrop-filter】（卡顿元凶）；
+            玻璃质感用实色+渐变模拟。无无限循环动画，仅一次性入场过渡。
+   外观可调项映射到 CSS 自定义属性（ui.js applyCurrentSettings 写入），切换零重渲。 */
+
+@keyframes ov-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ov-rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+/* 正文面板专用入场：保留水平居中 translateX(-50%)。用普通 ov-rise-in 会在动画期把 transform 覆写成
+   只有 translateY，面板瞬间丢失 -50% 居中而右移、动画结束又弹回 —— 这就是「首次渲染左右瞬移」的真因。 */
+@keyframes ov-panel-rise { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes ov-caret-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.1; } }
+@keyframes ov-dots { 0% { content: "生成中"; } 33% { content: "生成中·"; } 66% { content: "生成中··"; } 100% { content: "生成中···"; } }
+@keyframes ov-wait-dots { 0% { content: ""; } 33% { content: "."; } 66% { content: ".."; } 100% { content: "..."; } }
+@keyframes ov-wait-wave { 0%,100% { transform: translateY(0); } 45% { transform: translateY(-7px); } }
+@keyframes ov-hint-pulse { 0%,100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(4px); opacity: 1; } }
+/* 切楼层：当前正文带拖影（模糊）朝滚动方向飞出，新正文从反向滑入 */
+@keyframes ov-slide-out-down { from { transform: translateY(0); opacity: 1; filter: blur(0); } to { transform: translateY(60px); opacity: 0; filter: blur(3px); } }
+@keyframes ov-slide-out-up   { from { transform: translateY(0); opacity: 1; filter: blur(0); } to { transform: translateY(-60px); opacity: 0; filter: blur(3px); } }
+@keyframes ov-slide-in-up    { from { transform: translateY(48px); opacity: 0; filter: blur(2px); } to { transform: translateY(0); opacity: 1; filter: blur(0); } }
+@keyframes ov-slide-in-down  { from { transform: translateY(-48px); opacity: 0; filter: blur(2px); } to { transform: translateY(0); opacity: 1; filter: blur(0); } }
+
+/* ===== 全屏根容器 + 可调变量 ===== */
+#st-overlay-root {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: none;
+    color: #e7e7ea;
+
+    /* —— 纯黑磨砂玻璃基底（无蓝紫亮色）—— */
+    --ov-accent: #d8d8dd;
+    --ov-accent-2: #9a9aa2;
+    --ov-quote: #d8d8dd;
+    --ov-emphasis: #ececf0;
+    --ov-bracket: #ececf0;
+    --ov-italic: #d8d8dd;
+    --ov-bottom-fade: 64px;   /* 正文底部接近输入框处的虚化高度 */
+    --ov-panel-bg-live: 0.55;  /* 底部黑框强度由设置渐进写入，0 时完全透明 */
+    --ov-panel-bg-live-soft: 0.47;
+    --ov-panel-shadow-live: 0.5;
+    --ov-panel-stroke-live: rgba(255,255,255,0.055);
+    --ov-composer-bg: 0.55;
+    --ov-composer-blur: 10px;
+    --ov-glass: #0d0d0f;
+    --ov-glass-strong: #08080a;
+    --ov-stroke: rgba(255, 255, 255, 0.10);
+    --ov-stroke-soft: rgba(255, 255, 255, 0.055);
+    --ov-muted: rgba(231, 231, 234, 0.46);
+
+    /* —— 由设置写入（含默认兜底）—— */
+    --ov-font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    --ov-font-size: 17px;
+    --ov-line-height: 1.8;
+    --ov-panel-width: 70%;
+    --ov-panel-pad: 30px 40px;
+    --ov-frag-gap: 16px;
+    --ov-vignette: 0.55;   /* 暗角强度 0..1 */
+    --ov-panel-bg: 0.55;   /* 面板背景不透明度 0..1 */
+    --ov-glow: 0.04;       /* 辉光强度 */
+    --ov-window-glow: 0.5; /* 舞台背景中心光强度 */
+    --ov-placeholder-glow: 0.6; /* 无背景占位层中心光强度 */
+    --ov-letterbox: 0px;   /* 已废弃（影院黑边移除，见「顶部文本高度」）；保留防旧引用报错 */
+    --ov-text-top: 40px;   /* 顶部文本高度：正文首行从屏幕顶部向下的偏移 */
+    --ov-panel-maxh: 56vh;  /* VN 文本面板高度 */
+    --ov-plain-bottom-gap: 56vh; /* 底部文本高度：普通正文滚到底时最后一行离屏幕底部的距离 */
+    --ov-text-bg: transparent;   /* 文本块背景（设置写入） */
+    --ov-text-bg-pad: 0px;
+    --ov-text-bg-radius: 0px;
+    --ov-text-bg-gap: 0px;
+
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+#st-overlay-root.ov-visible { visibility: visible; pointer-events: auto; opacity: 1; }
+#st-overlay-root .ov-window {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 90% at 50% 0%, rgba(26,26,30,var(--ov-window-glow)), transparent 60%),
+        #040405;
+}
+
+/* ===== 分层舞台 ===== */
+#st-overlay-root .ov-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    cursor: pointer; /* 左键推进 */
+    user-select: none;
+}
+/* 正文默认允许拖选；JS 用 click/drag 阈值区分「导航」和「选择」。 */
+#st-overlay-root .ov-stage,
+#st-overlay-root .ov-panel,
+#st-overlay-root .ov-panel-text {
+    user-select: text; -webkit-user-select: text;
+}
+#st-overlay-root .ov-panel-text { cursor: text; }
+#st-overlay-root .ov-layer { position: absolute; inset: 0; pointer-events: none; }
+
+/* 背景层：优先完整显示（contain），不裁切铺满；两侧/上下留黑边 */
+#st-overlay-root .ov-bg {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: #040405; /* letterbox 填充 */
+    z-index: 0;
+    animation: ov-fade-in 0.6s ease;
+}
+#st-overlay-root .ov-bg.ov-placeholder {
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 18vh;
+    font-size: 13px; letter-spacing: 2px; color: rgba(255,255,255,0.18);
+    background:
+        radial-gradient(80% 60% at 50% 40%, rgba(40,40,46,var(--ov-placeholder-glow)), transparent 70%),
+        linear-gradient(180deg, #0a0a0d, #050506 70%, #020203);
+}
+
+/* 暗角/辉光（灯光设置） */
+#st-overlay-root .ov-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    box-shadow: inset 0 0 calc(220px * var(--ov-vignette)) rgba(0,0,0,calc(0.9 * var(--ov-vignette)));
+    background: radial-gradient(60% 50% at 50% 45%, rgba(255,255,255,var(--ov-glow)), transparent 70%);
+}
+
+/* 立绘层 */
+#st-overlay-root .ov-sprites { z-index: 2; }
+#st-overlay-root .ov-sprite {
+    position: absolute; bottom: 0;
+    width: min(34%, 380px); height: 72%;
+    background-size: contain; background-repeat: no-repeat;
+    opacity: 0; transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateY(20px);
+}
+#st-overlay-root .ov-sprite-left { left: 3%; background-position: bottom left; }
+#st-overlay-root .ov-sprite-right { right: 3%; background-position: bottom right; }
+#st-overlay-root .ov-sprite.ov-active { opacity: 1; transform: translateY(0); }
+#st-overlay-root .ov-sprite.ov-placeholder {
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px;
+    border: 1px dashed rgba(255,255,255,0.12); border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(180deg, transparent, rgba(255,255,255,0.03));
+    font-size: 12px; letter-spacing: 1px; color: rgba(255,255,255,0.3);
+}
+
+/* 全屏 CG 层：优先完整显示，不裁切 */
+#st-overlay-root .ov-cg {
+    z-index: 6; pointer-events: auto;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    background-color: #040405;
+    opacity: 0; transition: opacity 0.5s ease;
+}
+#st-overlay-root .ov-cg.ov-active { opacity: 1; }
+#st-overlay-root .ov-cg.ov-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(60% 60% at 50% 50%, #15151a, #050506);
+}
+#st-overlay-root .ov-cg-label { font-size: 14px; letter-spacing: 3px; color: rgba(255,255,255,0.4); }
+#st-overlay-root .ov-cg-loading { position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%); font-size: 12px; letter-spacing: 2px; color: rgba(255,255,255,0.55); }
+#st-overlay-root .ov-cg-loading::after { content: ""; animation: ov-dots 1.2s steps(1) infinite; }
+
+/* 视频媒体（复用 CG 层 #ov-cg）：居中、等比缩放、黑底。controls 由原生提供。 */
+#st-overlay-root .ov-media-video {
+    width: 100%; height: 100%;
+    max-width: 100%; max-height: 100%;
+    object-fit: contain; background: #000;
+    display: block; border: none;
+}
+
+/* 正文面板（视觉中心）。底部偏移由 --ov-panel-bottom 控制（默认为 6vh），让正文更高或更低。 */
+#st-overlay-root .ov-panel {
+    position: absolute;
+    left: 50%; bottom: var(--ov-panel-bottom, 6vh);
+    transform: translateX(-50%);
+    width: min(100%, var(--ov-panel-width));
+    box-sizing: border-box;
+    max-height: 90%;                    /* 安全上限（不超出视口）；VN 正文实际高度由 .ov-panel-text 的 --ov-panel-maxh 决定 */
+    z-index: 5; pointer-events: none;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: var(--ov-panel-pad);
+    border-radius: 20px;
+    border: 1px solid var(--ov-panel-stroke-live);
+    background:
+        linear-gradient(180deg, rgba(10,10,12,var(--ov-panel-bg-live-soft)), rgba(6,6,8,var(--ov-panel-bg-live)));
+    box-shadow: 0 18px 50px rgba(0,0,0,var(--ov-panel-shadow-live));
+    animation: ov-panel-rise 0.4s ease;
+    /* 只过渡 opacity，不过渡 transform：VN↔普通切换 / 打开时 left 与 transform 会同时变，
+       若过渡 transform 则面板会横向滑动一下（左右瞬移）。damp 位移在 .ov-panel-text 上，与此无关。 */
+    transition: bottom 0.18s ease, opacity 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+#st-overlay-root .ov-panel.ov-dimmed { opacity: 0; visibility: hidden; }
+/* 正文还没有字时不画面板底色/边框/投影。
+   推理阶段首批 token 只有思维链，onStream 却已解除 ov-dimmed，面板会亮成一个空框浮在舞台上。
+   .ov-typing 例外：打字机开场先清空正文再逐字揭示，那一瞬是「内容将至」而非「没有内容」，
+   跟着闪一下反而更糟。改 live 变量而非直接 background:none，是为了让渐变形状不变，
+   首字落地时能顺着面板已有的 background/box-shadow/border-color 过渡淡入。 */
+#st-overlay-root .ov-panel:has(> .ov-panel-text:empty:not(.ov-typing)) {
+    --ov-panel-bg-live: 0;
+    --ov-panel-bg-live-soft: 0;
+    --ov-panel-shadow-live: 0;
+    --ov-panel-stroke-live: transparent;
+}
+/* 连面板底部的 ▾ 一起藏：框没了还留一个箭头浮在空舞台上更怪。
+   用 visibility 而非 opacity——renderCurrent 会往 hint 上写内联 opacity，内联样式压得过类规则。 */
+#st-overlay-root .ov-panel:has(> .ov-panel-text:empty:not(.ov-typing)) .ov-advance-hint {
+    visibility: hidden;
+}
+
+#st-overlay-root .ov-speaker {
+    font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+    color: var(--ov-accent);
+    text-transform: none;
+}
+#st-overlay-root .ov-panel-text {
+    --ov-damp-y: 0px;
+    overflow-y: auto;
+    overflow-x: hidden;       /* 无横向滚动条 */
+    padding-top: var(--ov-text-top, 40px);  /* 顶部文本高度：首行从区域顶部向下偏移（普通/HTML 楼层各自覆盖） */
+    /* 预留滚动条槽位：正文逐字增长越过 max-height 时滚动条出现，若不预留会瞬间挤窄正文
+       导致文字左右瞬移（尤其打字机逐字揭示时）。stable 恒留槽位，宽度不变=不抖。 */
+    scrollbar-gutter: stable;
+    font-family: var(--ov-font-family);
+    font-size: var(--ov-font-size);
+    line-height: var(--ov-line-height);
+    color: var(--ov-text-color, #ececf0);
+    /* 正文亮度/对比度（设置滑条写入；100%/100% 时无副作用） */
+    filter: brightness(var(--ov-text-brightness, 1)) contrast(var(--ov-text-contrast, 1));
+    word-break: break-word;
+    pointer-events: auto; /* 允许选中/链接，但翻页靠 stage 空白处 */
+    /* 滚轮跟手漂移（切楼层前的「我在滚」反馈），不破坏布局 */
+    transform: translateY(var(--ov-damp-y));
+    transition: none;
+    will-change: transform;
+    /* 滚动条默认隐藏（Firefox）；滚动时 .ov-scrolling 渐显 */
+    scrollbar-width: none;
+    scrollbar-color: transparent transparent;
+}
+/* 文本背景：包在每条文本块上（p / 散文块等），不是整栏铺满 */
+#st-overlay-root .ov-panel-text > p,
+#st-overlay-root .ov-panel-text > .ov-prose,
+#st-overlay-root .ov-panel-text > .ov-text-block,
+#st-overlay-root .ov-panel-text > div:not(.ov-html-inline):not(.ov-prose),
+#st-overlay-root .ov-panel-text > blockquote,
+#st-overlay-root .ov-panel-text > ul,
+#st-overlay-root .ov-panel-text > ol,
+#st-overlay-root .ov-panel-text > h1,
+#st-overlay-root .ov-panel-text > h2,
+#st-overlay-root .ov-panel-text > h3,
+#st-overlay-root .ov-panel-text > h4,
+#st-overlay-root .ov-panel-text > pre {
+    background: var(--ov-text-bg, transparent);
+    border-radius: var(--ov-text-bg-radius, 0px);
+    padding: var(--ov-text-bg-pad, 0px);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+/* 有文本背景时段落间距略拉开，避免块贴死 */
+#st-overlay-root .ov-panel-text > p + p,
+#st-overlay-root .ov-panel-text > div + p,
+#st-overlay-root .ov-panel-text > p + div {
+    margin-top: max(0.7em, var(--ov-text-bg-gap, 0px));
+}
+/* VN 楼层：文本显示区【固定高度】（随「VN 文本高度」滑条 --ov-panel-maxh，vh 单位），
+   内部滚动——拖动滑条即可见文字框变高/变矮，不再只在内容溢出时才生效。
+   排除普通楼层(data-plain=true，已占满舞台)与 HTML 楼层(data-html)。 */
+#st-overlay-root[data-plain="false"]:not([data-html="true"]):not([data-html="inline"]) .ov-panel-text {
+    height: var(--ov-panel-maxh, 56vh);
+    min-height: 0;
+    overflow-y: auto;
+    box-sizing: border-box;  /* 固定高度含顶部 padding，拖动滑条即为可见框高 */
+}
+#st-overlay-root .ov-panel-text.ov-typing::after {
+    content: "▍"; margin-left: 1px; color: var(--ov-accent);
+    animation: ov-caret-blink 1s steps(1) infinite;
+}
+/* 滚动条：宽度恒定（防布局抖动），thumb 默认透明，滚动时渐显 */
+#st-overlay-root .ov-panel-text::-webkit-scrollbar { width: 7px; }
+#st-overlay-root .ov-panel-text::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; transition: background 0.3s ease; }
+#st-overlay-root .ov-panel-text.ov-scrolling { scrollbar-color: rgba(255,255,255,0.18) transparent; }
+#st-overlay-root .ov-panel-text.ov-scrolling::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); }
+#st-overlay-root .ov-panel-text:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); }
+#st-overlay-root .ov-panel-text > *:first-child { margin-top: 0; }
+#st-overlay-root .ov-panel-text > *:last-child { margin-bottom: 0; }
+#st-overlay-root .ov-panel-text p { margin: 0 0 0.7em; }
+#st-overlay-root .ov-panel-text strong { color: var(--ov-emphasis); }
+#st-overlay-root .ov-panel-text em { color: var(--ov-italic); font-style: normal; }
+#st-overlay-root .ov-panel-text q { color: var(--ov-quote); }
+#st-overlay-root .ov-panel-text .ov-bracket { color: var(--ov-bracket); }
+/* 原文已自带引号（「」/"" 等），不再由 q 伪元素叠加引号，避免双重引号 */
+#st-overlay-root .ov-panel-text q::before, #st-overlay-root .ov-panel-text q::after { content: none; }
+#st-overlay-root .ov-panel-text pre, #st-overlay-root .ov-panel-text img,
+#st-overlay-root .ov-panel-text table { max-width: 100%; }
+#st-overlay-root .ov-panel-text pre {
+    background: rgba(0,0,0,0.45); border: 1px solid var(--ov-stroke-soft);
+    border-radius: 10px; padding: 10px 12px; overflow-x: auto;
+}
+#st-overlay-root .ov-panel-text code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; }
+#st-overlay-root .ov-panel-text blockquote {
+    margin: 0.5em 0; padding-left: 12px; border-left: 2px solid var(--ov-accent-2); color: var(--ov-muted);
+}
+
+/* 普通楼层（无舞台标签）：正文铺满舞台；滑条控制滚到底时最后一行距离屏幕底部的高度。
+   数值越大，内部可滚动距离越长；0 就是没有额外底部留白。 */
+#st-overlay-root[data-plain="true"] .ov-stage { cursor: default; }
+#st-overlay-root[data-plain="true"] .ov-panel {
+    --ov-damp-y: 0px;
+    top: 0;
+    bottom: 0;
+    left: 0; right: 0;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    border: none; border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    background: transparent;
+    animation: ov-fade-in 0.25s ease;
+}
+/* 正文居中成一栏可读宽度（随 --ov-panel-width）；底部余量由 --ov-plain-bottom-gap 控制。 */
+#st-overlay-root[data-plain="true"] .ov-panel-text {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    width: 100%; max-width: var(--ov-panel-width);
+    margin: 0 auto;
+    padding: var(--ov-text-top, 40px) clamp(16px, 5vw, 60px) var(--ov-plain-bottom-gap, 56vh);
+    scroll-padding-bottom: var(--ov-plain-bottom-gap, 56vh);
+    box-sizing: border-box;
+    /* 上下双向溶解：顶部化进回显胶囊，底部化进输入框。
+       --ov-top-fade 为 0 时 stop 序列退化成「0 处透明、0 处纯黑」，与单向遮罩逐像素等价。 */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ov-top-fade, 0px), #000 calc(100% - var(--ov-bottom-fade)), transparent);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ov-top-fade, 0px), #000 calc(100% - var(--ov-bottom-fade)), transparent);
+}
+/* bottomFade=0：完全无黑框/虚化，正文一栏到底、去掉底部留白（真正贴底，无「一点黑边」）。
+   顶部仍保留「顶部文本高度」偏移（首行起始位置由 --ov-text-top 独立控制）。
+   必须同时要求 topFade=0：否则「底部不虚化 + 顶部虚化」这一组合会被整条置 none 抹掉。 */
+#st-overlay-root[data-plain="true"][data-fade="0"][data-topfade="0"] .ov-panel-text {
+    -webkit-mask-image: none; mask-image: none;
+}
+/* bottomFade=0（全局，含 VN 模式）：去掉正文面板的深色渐变底与投影 → 真正「无黑框」；
+   底部输入区去掉压底渐变，只保留毛玻璃虚化（输入框浮现时柔化其后的正文，而非一块黑框）。 */
+#st-overlay-root[data-fade="0"] .ov-panel {
+    border-color: transparent;
+}
+#st-overlay-root[data-fade="0"] .ov-composer {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+#st-overlay-root[data-plain="true"] .ov-speaker,
+#st-overlay-root[data-plain="true"] .ov-advance-hint { display: none; }
+#st-overlay-root[data-plain="true"] .ov-vignette { opacity: 0.5; }
+
+/* HTML 楼层：iframe 沙箱全屏铺满（借 Amily2 模式，自动调高） */
+#st-overlay-root[data-html="true"] .ov-panel {
+    top: 0; bottom: 0; left: 0; right: 0;
+    transform: none; width: 100%; max-width: none; max-height: none;
+    border: none; border-radius: 0; box-shadow: none; background: transparent;
+    padding: 0;
+}
+#st-overlay-root[data-html="true"] .ov-panel-text {
+    width: 100%; max-width: none; height: 100%;
+    margin: 0; padding: 0; overflow: hidden;
+    -webkit-mask-image: none; mask-image: none;
+}
+#st-overlay-root[data-html="true"] .ov-speaker,
+#st-overlay-root[data-html="true"] .ov-advance-hint { display: none; }
+#st-overlay-root[data-html="true"] .ov-vignette { opacity: 0.25; }
+/* iframe 沙箱：全宽、透明背景、自动调高（高度由 js 的 postMessage 驱动） */
+#st-overlay-root .ov-html-frame {
+    width: 100%; border: none; background: transparent; display: block;
+    min-height: 100%;
+}
+/* 内联 HTML 块（片段级：选项界面/卡片等）：接在正文散文底部，跟随内容高度，不铺满全屏。
+   面板仍是居中浮窗（沿用默认 .ov-panel 样式），HTML 块只占正文里它该占的高度。 */
+#st-overlay-root[data-html="inline"] .ov-html-inline {
+    width: 100%; border: none; background: transparent; display: block;
+    min-height: 0; margin-top: 10px;
+}
+#st-overlay-root .ov-prose { margin: 0; }
+
+/* 推进提示 */
+#st-overlay-root .ov-advance-hint {
+    align-self: center; font-size: 16px; color: var(--ov-muted);
+    margin-top: 2px; pointer-events: none;
+}
+#st-overlay-root .ov-advance-hint.ov-pulse { animation: ov-hint-pulse 0.5s ease 2; }
+
+/* 道具浮层 */
+#st-overlay-root .ov-items { z-index: 5; }
+#st-overlay-root .ov-item-float {
+    position: absolute; top: 14%; right: 4%;
+    width: 132px; pointer-events: auto;
+    display: flex; flex-direction: column; gap: 6px;
+    animation: ov-rise-in 0.4s ease;
+}
+#st-overlay-root .ov-item-float[data-pos="float-left"] { left: 4%; right: auto; }
+#st-overlay-root .ov-item-ph {
+    height: 100px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.03);
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 6px; font-size: 11px; color: rgba(255,255,255,0.5);
+}
+#st-overlay-root .ov-item-cap { font-size: 11px; line-height: 1.4; color: var(--ov-muted); text-align: center; }
+
+/* ===== 左下角状态条（HUD） ===== */
+#st-overlay-root .ov-status {
+    position: absolute; left: 18px; bottom: 16px;
+    z-index: 7;
+    display: flex; flex-direction: column; gap: 8px;
+    width: min(260px, 30%);
+    pointer-events: none;
+}
+#st-overlay-root .ov-status:empty { display: none; }
+#st-overlay-root .ov-status > * { pointer-events: auto; }
+
+/* ===== 片段跳转条（旧楼层才显） ===== */
+#st-overlay-root .ov-jumpbar {
+    position: absolute; right: var(--ov-jumpbar-inset, 14px); top: 50%; transform: translateY(-50%);
+    z-index: 7;
+    display: flex; flex-direction: column; gap: 9px; align-items: center;
+    padding: 10px 7px; border-radius: 999px;
+    background: rgba(8,8,10,0.6); border: 1px solid var(--ov-stroke-soft);
+    animation: ov-fade-in 0.25s ease;
+}
+#st-overlay-root .ov-jump-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.4); background: transparent;
+    cursor: pointer; padding: 0; transition: background 0.15s, transform 0.15s;
+    pointer-events: none; /* 拖动/点击由 .ov-jump-dots 统一接管 */
+}
+#st-overlay-root .ov-jump-dot:hover { background: rgba(255,255,255,0.4); transform: scale(1.2); }
+#st-overlay-root .ov-jump-dot.ov-current { background: var(--ov-accent); border-color: var(--ov-accent); }
+
+/* 本楼片段圆点列：按住上下拖切换片段 */
+#st-overlay-root .ov-jump-dots {
+    display: flex; flex-direction: column; gap: 9px; align-items: center;
+    padding: 4px 0; cursor: ns-resize; touch-action: none; user-select: none;
+    width: 22px;
+}
+#st-overlay-root .ov-jump-dots.ov-scrubbing .ov-jump-dot.ov-current {
+    transform: scale(1.35);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.12);
+}
+
+/* 圆润箭头：显式切楼层入口（点击或点住朝箭头方向滑动） */
+#st-overlay-root .ov-jump-arrow {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.05);
+    color: var(--ov-accent); cursor: pointer; padding: 0; font-size: 10px;
+    touch-action: none; user-select: none;
+    transition: background 0.15s, transform 0.12s, border-color 0.15s, opacity 0.15s;
+}
+#st-overlay-root .ov-jump-arrow:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.5); transform: scale(1.12); }
+#st-overlay-root .ov-jump-arrow:active { transform: scale(0.92); }
+#st-overlay-root .ov-jump-arrow.ov-disabled { opacity: 0.22; cursor: default; pointer-events: none; }
+#st-overlay-root .ov-jumpbar-hotzone {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 28px;
+    z-index: 7; pointer-events: none; display: none;
+}
+#st-overlay-root .ov-window[data-jumpbar="auto"] .ov-jumpbar-hotzone { display: block; pointer-events: auto; }
+#st-overlay-root .ov-window[data-jumpbar="auto"]:has(#ov-jumpbar[hidden]) .ov-jumpbar-hotzone { display: none; }
+#st-overlay-root .ov-window[data-jumpbar="auto"] .ov-jumpbar {
+    transform: translateY(-50%) translateX(120%); opacity: 0; pointer-events: none;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+#st-overlay-root .ov-window[data-jumpbar="auto"].ov-jumpbar-show .ov-jumpbar {
+    transform: translateY(-50%) translateX(0); opacity: 1; pointer-events: auto;
+}
+
+/* ===== 跨楼层提示（到边界继续滚动切楼层） ===== */
+#st-overlay-root .ov-floor-hint {
+    position: absolute; left: 50%; transform: translateX(-50%) translateY(6px);
+    z-index: 9; pointer-events: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 16px; border-radius: 999px;
+    background: rgba(10,10,12,0.78); border: 1px solid var(--ov-stroke);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    font-size: 12px; letter-spacing: 1px; color: #eef1f6; white-space: nowrap;
+    opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#st-overlay-root .ov-floor-hint.ov-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+#st-overlay-root .ov-floor-hint-top { top: 54px; }
+#st-overlay-root .ov-floor-hint-bottom { bottom: 18px; }
+#st-overlay-root .ov-fh-arrow { color: var(--ov-accent); font-size: 10px; animation: ov-fh-bob 1s ease-in-out infinite; }
+#st-overlay-root .ov-floor-hint-bottom .ov-fh-arrow { animation-direction: alternate; }
+@keyframes ov-fh-bob { 0% { transform: translateY(-2px); } 100% { transform: translateY(2px); } }
+
+/* ===== 顶部极简操作 ===== */
+#st-overlay-root .ov-topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 8;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; pointer-events: none;
+}
+#st-overlay-root .ov-floor-meta {
+    font-size: 11px; letter-spacing: 1px; color: var(--ov-muted);
+    font-variant-numeric: tabular-nums; pointer-events: none;
+}
+#st-overlay-root .ov-topbar-wrap { position: absolute; right: 0; top: 0; display: flex; align-items: flex-start; justify-content: flex-end; pointer-events: auto; }
+#st-overlay-root .ov-topbar-actions { display: flex; gap: 8px; pointer-events: auto; transition: opacity 0.2s ease, transform 0.2s ease; }
+#st-overlay-root .ov-topbar .ov-icon-btn { pointer-events: auto; }
+/* 折叠箭头：标准 .ov-icon-btn 尺寸/外观（与其它顶栏图标一致），chevron 朝左。
+   仅自动隐藏模式显示。可拖动到任意位置（index.js makeDraggable moveTarget=.ov-topbar-wrap）。 */
+#st-overlay-root .ov-topbar-toggle {
+    display: none;
+}
+#st-overlay-root .ov-window[data-topbar="auto"] .ov-topbar-toggle { display: inline-flex; }
+#st-overlay-root .ov-window[data-topbar="auto"] .ov-topbar-actions {
+    opacity: 0; transform: translateX(8px); pointer-events: none;
+}
+#st-overlay-root .ov-window[data-topbar="auto"] .ov-topbar-wrap:hover .ov-topbar-actions,
+#st-overlay-root .ov-window[data-topbar="auto"].ov-topbar-show .ov-topbar-actions {
+    opacity: 1; transform: translateX(0); pointer-events: auto;
+}
+#st-overlay-root .ov-window[data-topbar="auto"].ov-topbar-show .ov-topbar-toggle,
+#st-overlay-root .ov-window[data-topbar="auto"] .ov-topbar-wrap:hover .ov-topbar-toggle { transform: rotate(180deg); }
+#st-overlay-root .ov-close-btn:hover { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.4); color: #fca5a5; }
+#st-overlay-root .ov-icon-btn {
+    width: 34px; height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 11px; border: 1px solid var(--ov-stroke);
+    background: rgba(8,8,10,0.55); color: #eef1f6; cursor: pointer; font-size: 13px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+#st-overlay-root .ov-icon-btn:hover { background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.28); }
+
+/* ===== 等待态（空窗期）—— 顶部单行，每字依次上跳再落下 ===== */
+#st-overlay-root .ov-waiting {
+    position: absolute; top: calc(var(--ov-text-top, 40px) + 14px); left: 50%; transform: translateX(-50%);
+    width: min(100%, var(--ov-panel-width)); height: auto; box-sizing: border-box;
+    padding: 0 clamp(16px, 5vw, 60px);
+    z-index: 9; pointer-events: none; opacity: 0;
+    display: flex; align-items: center; justify-content: flex-start;
+    transition: opacity 0.25s ease;
+    font-size: 16px; letter-spacing: 3px; color: rgba(238,241,246,0.8);
+}
+#st-overlay-root .ov-waiting.ov-on { opacity: 1; }
+#st-overlay-root .ov-waiting-dots { display: inline-flex; gap: 1px; }
+#st-overlay-root .ov-waiting-dots i {
+    display: inline-block; font-style: normal;
+    animation: ov-char-bob 1.2s ease-in-out infinite;
+}
+#st-overlay-root .ov-waiting-dots i:nth-child(1) { animation-delay: 0s; }
+#st-overlay-root .ov-waiting-dots i:nth-child(2) { animation-delay: 0.12s; }
+#st-overlay-root .ov-waiting-dots i:nth-child(3) { animation-delay: 0.24s; }
+#st-overlay-root .ov-waiting-dots i:nth-child(4) { animation-delay: 0.36s; }
+#st-overlay-root .ov-waiting-dots i:nth-child(5) { animation-delay: 0.48s; }
+#st-overlay-root .ov-waiting-dots::after { content: "..."; animation: ov-wait-dots 1.2s steps(1) infinite; margin-left: 2px; }
+@keyframes ov-char-bob { 0%,100% { transform: translateY(0); } 45% { transform: translateY(-6px); } }
+
+#st-overlay-root .ov-thinking {
+    position: absolute; top: calc(var(--ov-text-top, 40px) + 8px); left: 50%; transform: translateX(-50%);
+    z-index: 9; width: min(100%, var(--ov-panel-width)); box-sizing: border-box;
+    color: rgba(238,241,246,0.68); font-size: 12px;
+    background: transparent; border: none; padding: 0 clamp(16px, 5vw, 60px);
+}
+#st-overlay-root .ov-thinking summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+#st-overlay-root .ov-thinking summary::-webkit-details-marker { display: none; }
+#st-overlay-root .ov-thinking summary i {
+    display: none;
+}
+#st-overlay-root[data-thinking-line="false"] .ov-thinking summary i { display: none; }
+#st-overlay-root .ov-thinking summary span {
+    display: block; min-height: 34px; max-height: 38px; overflow: hidden; line-height: 1.55;
+    padding: 8px 11px 18px;
+    color: rgba(238,241,246,0.54);
+    background: linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.012));
+    border: none; outline: none; border-radius: 12px; box-shadow: none;
+    backdrop-filter: blur(7px) saturate(1.15); -webkit-backdrop-filter: blur(7px) saturate(1.15);
+}
+#st-overlay-root .ov-thinking summary b {
+    align-self: flex-start; margin-top: -22px; margin-left: 8px; padding: 2px 8px;
+    color: rgba(238,241,246,0.46); font-weight: 500; border-radius: 9px;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+#st-overlay-root .ov-thinking summary:hover b { background: rgba(255,255,255,0.075); color: rgba(238,241,246,0.76); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.24); }
+#st-overlay-root .ov-thinking summary:active b { transform: translateY(0); }
+#st-overlay-root .ov-thinking[open] { padding-bottom: 30px; }
+#st-overlay-root .ov-thinking[open] summary span { display: none; }
+#st-overlay-root .ov-thinking[open] summary b {
+    position: absolute; left: calc(clamp(16px, 5vw, 60px) + 8px); bottom: 0;
+    margin: 0;
+}
+#st-overlay-root .ov-thinking > div {
+    margin-top: 8px; line-height: 1.65; max-height: 42vh; overflow: auto;
+    padding: 10px 12px; color: rgba(238,241,246,0.72);
+    background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.018));
+    border: none; outline: none; border-radius: 12px; box-shadow: none;
+    backdrop-filter: blur(9px) saturate(1.15); -webkit-backdrop-filter: blur(9px) saturate(1.15);
+}
+#st-overlay-root .ov-thinking[open] > div { max-height: 60vh; }
+#st-overlay-root .ov-audio-state {
+    position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
+    z-index: 9; display: flex; align-items: center; gap: 10px;
+    max-width: min(72vw, var(--ov-panel-width)); padding: 7px 12px;
+    border-radius: 999px; background: rgba(20,20,24,0.48); color: rgba(238,241,246,0.82);
+    border: 1px solid rgba(255,255,255,0.11); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    font-size: 12px; pointer-events: none;
+}
+#st-overlay-root .ov-audio-state b { color: rgba(238,241,246,0.95); font-weight: 600; }
+#st-overlay-root .ov-audio-state em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; }
+
+/* 选择模式：右键弹出的文本菜单（复制 + Google 搜索） */
+#st-overlay-root .ov-copy-fab {
+    position: absolute; z-index: 12; pointer-events: auto;
+    display: flex; flex-direction: column; gap: 6px;
+    opacity: 0; transform: translateY(6px); transition: opacity 0.15s ease, transform 0.15s ease;
+}
+#st-overlay-root .ov-copy-fab.ov-on { opacity: 1; transform: translateY(0); }
+#st-overlay-root .ov-copy-fab button {
+    width: 34px; height: 34px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none;
+    background: var(--ov-glass-strong); color: #eef1f6; cursor: pointer; font-size: 13px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+#st-overlay-root .ov-copy-fab button:hover { background: rgba(96,99,108,0.96); color: #f2f3f5; }
+#st-overlay-root .ov-copy-fab.ov-flash-ok button[data-act="copy"] { background: rgba(96,99,108,0.96); color: #7ee0a0; }
+#st-overlay-root .ov-copy-fab[data-flash]::after {
+    content: attr(data-flash); position: absolute; left: 50%; top: -22px; transform: translateX(-50%);
+    font-size: 11px; color: var(--ov-accent); white-space: nowrap;
+}
+
+/* ===== 顶部「上一条我的输入」回显 =====
+   与底部输入框整套上下镜像：悬停顶部热区 → 胶囊从上方滑入，只读展示产生本楼的那条用户消息。
+   本楼之前没有用户消息时（开局第一楼、连续 AI 楼），.ov-window 上带 ov-reply-empty，整套不出现。 */
+#st-overlay-root .ov-reply {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: var(--ov-reply-top, 52px) clamp(16px, 6vw, 80px) 12px;
+    /* 同 .ov-composer：横条只负责布局，指针一律穿透，只有胶囊本身收事件。
+       否则顶部这条全宽横条会把它盖住的正文与 <opt> 选项一起废掉。 */
+    pointer-events: none;
+    /* 低于 .ov-topbar 的 8：楼层号与右上角图标永远压在胶囊之上，不被遮住 */
+    z-index: 7;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+#st-overlay-root .ov-reply-inner {
+    pointer-events: auto;
+    max-width: var(--ov-panel-width); margin: 0 auto;
+    padding: 12px 16px;
+    border-radius: 18px; border: 1px solid var(--ov-stroke);
+    background: var(--ov-glass-strong);
+    box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+}
+#st-overlay-root .ov-reply-text {
+    max-height: var(--ov-reply-maxh, 30vh); overflow-y: auto;
+    font-family: var(--ov-font-family);
+    font-size: calc(var(--ov-font-size, 17px) * 0.86);
+    line-height: 1.65;
+    /* 由「配色 → 我的输入回显」控制；跟随 ST 时取正文色，与 .ov-panel-text 同一变量 */
+    color: var(--ov-reply-color, var(--ov-muted));
+    overflow-wrap: break-word;
+}
+#st-overlay-root .ov-reply-text > *:first-child { margin-top: 0; }
+#st-overlay-root .ov-reply-text > *:last-child { margin-bottom: 0; }
+/* 回显整颗胶囊只认一个颜色：messageFormatting 产出的引号/粗体/斜体不另走语义色 */
+#st-overlay-root .ov-reply-text q,
+#st-overlay-root .ov-reply-text em,
+#st-overlay-root .ov-reply-text strong { color: inherit; }
+
+/* 顶部小箭头提示（朝下，底部箭头的上下翻转）；唤起后淡出并断掉指针事件 */
+#st-overlay-root .ov-reply-arrow {
+    position: absolute; left: 50%; top: var(--ov-reply-arrow-top, 6px); transform: translateX(-50%);
+    z-index: 9; pointer-events: auto; display: none;
+    width: var(--ov-reply-arrow-size, 28px); height: var(--ov-reply-arrow-height, 12px); opacity: 0.5;
+    color: var(--ov-muted); cursor: pointer;
+    animation: ov-reply-arrow-bob 1.6s ease-in-out infinite; transition: opacity 0.2s ease;
+}
+#st-overlay-root .ov-reply-arrow svg { width: 100%; height: 100%; display: block; }
+@keyframes ov-reply-arrow-bob { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-4px); } }
+
+/* 顶部唤起热区：同底部，只作几何标记，永不收指针事件（判定见 index.js 的 mousemove） */
+#st-overlay-root .ov-reply-hotzone {
+    position: absolute; left: 0; right: 0; top: 0; height: var(--ov-reply-hotzone, 28px);
+    z-index: 7; pointer-events: none; display: none;
+}
+#st-overlay-root .ov-window[data-reply="auto"] .ov-reply-hotzone { display: block; }
+#st-overlay-root .ov-window[data-reply="auto"] .ov-reply-arrow { display: block; }
+#st-overlay-root .ov-window[data-reply="auto"] .ov-reply {
+    transform: translateY(-110%); opacity: 0; pointer-events: none;
+}
+#st-overlay-root .ov-window[data-reply="auto"] .ov-reply-inner { pointer-events: none; }
+#st-overlay-root .ov-window[data-reply="auto"].ov-reply-show .ov-reply {
+    transform: translateY(0); opacity: 1;
+}
+#st-overlay-root .ov-window[data-reply="auto"].ov-reply-show .ov-reply-inner { pointer-events: auto; }
+#st-overlay-root .ov-window[data-reply="auto"].ov-reply-show .ov-reply-arrow { opacity: 0; pointer-events: none; }
+
+/* 本楼之前没有用户输入可显示：胶囊/箭头/热区全部撤掉，顶部保持干净 */
+#st-overlay-root .ov-window.ov-reply-empty .ov-reply,
+#st-overlay-root .ov-window.ov-reply-empty .ov-reply-arrow,
+#st-overlay-root .ov-window.ov-reply-empty .ov-reply-hotzone { display: none; }
+
+/* ===== 底部输入 =====
+   毛玻璃：输入框浮现时其后的正文被柔化模糊（用户要的「虚影模糊正文」），
+   而非一块黑色实框。backdrop-filter 模糊正文，叠加极淡渐变压底可读性。 */
+#st-overlay-root .ov-composer {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 12px clamp(16px, 6vw, 80px) 18px;
+    background: linear-gradient(to top, rgba(4,4,5,var(--ov-composer-bg)), transparent);
+    backdrop-filter: blur(var(--ov-composer-blur)) saturate(1.1);
+    -webkit-backdrop-filter: blur(var(--ov-composer-blur)) saturate(1.1);
+    z-index: 8;
+    transition: transform 0.25s ease, opacity 0.25s ease, background 0.18s ease, backdrop-filter 0.18s ease, -webkit-backdrop-filter 0.18s ease;
+    /* 横条要铺满整宽才能压出渐变和毛玻璃，但真正的输入框只是中间那颗 .ov-composer-inner。
+       整条不收指针事件、只让胶囊收，胶囊以外（两侧留白、上方渐变）的点击直接落到底下的正文，
+       否则输入框浮起后会把 <opt> 选项按钮整片盖住点不到。 */
+    pointer-events: none;
+}
+#st-overlay-root .ov-composer-inner { pointer-events: auto; }
+/* 输入框唤起热区（自动隐藏时悬停显示；高度由 composerHotzone 设置驱动 --ov-hotzone） */
+#st-overlay-root .ov-composer-hotzone {
+    position: absolute; left: 0; right: 0; bottom: 0; height: var(--ov-hotzone, 28px);
+    z-index: 7; pointer-events: none; display: none;
+}
+/* 底部小箭头提示（仅在自动隐藏 + composerArrow 开时显示；悬停/聚焦唤起后隐藏）。
+   扁长、朝上、非实心的线性 chevron（内联 SVG）；大小由 --ov-arrow-size 控制宽度，高度按比例。 */
+#st-overlay-root .ov-composer-arrow {
+    position: absolute; left: 50%; bottom: var(--ov-arrow-bottom, 6px); transform: translateX(-50%);
+    z-index: 9; pointer-events: auto; display: none;
+    width: var(--ov-arrow-size, 28px); height: var(--ov-arrow-height, 12px); opacity: 0.5;
+    color: var(--ov-muted); cursor: pointer;
+    animation: ov-arrow-bob 1.6s ease-in-out infinite; transition: opacity 0.2s ease;
+}
+#st-overlay-root .ov-composer-arrow svg { width: 100%; height: 100%; display: block; }
+#st-overlay-root .ov-window[data-composer="auto"] .ov-composer-arrow { display: block; }
+/* 唤起后箭头淡出：只设 opacity 的话元素还在原地吃点击，必须一并断掉指针事件 */
+#st-overlay-root .ov-window[data-composer="auto"].ov-composer-show .ov-composer-arrow { opacity: 0; pointer-events: none; }
+@keyframes ov-arrow-bob { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(4px); } }
+/* 自动隐藏：composer 默认下移隐藏，热区可点；显示靠 .ov-composer-show */
+/* 热区只作几何标记，永不收指针事件。composerHotzone 可以调到 100px 以上，
+   一旦 pointer-events:auto，这条全宽横条就盖住了正文底部的 <opt> 选项框；
+   而选项的点击是 iframe 内部脚本处理的（reader.js 的 bridgeScript），
+   父页面挡下来就无法补发进沙箱 iframe，选项彻底点不动。
+   唤起改由 index.js 的 mousemove 按几何判定，行为不变但不吃点击。 */
+#st-overlay-root .ov-window[data-composer="auto"] .ov-composer-hotzone { display: block; pointer-events: none; }
+#st-overlay-root .ov-window[data-composer="auto"] .ov-composer {
+    transform: translateY(110%); opacity: 0; pointer-events: none;
+}
+#st-overlay-root .ov-window[data-composer="auto"] .ov-composer-inner { pointer-events: none; }
+#st-overlay-root .ov-window[data-composer="auto"].ov-composer-show .ov-composer {
+    transform: translateY(0); opacity: 1;
+}
+/* 唤起后只有胶囊可点，横条仍然穿透 */
+#st-overlay-root .ov-window[data-composer="auto"].ov-composer-show .ov-composer-inner { pointer-events: auto; }
+#st-overlay-root .ov-composer-inner {
+    max-width: var(--ov-panel-width); margin: 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 8px 8px 16px;
+    border-radius: 18px; border: 1px solid var(--ov-stroke);
+    background: var(--ov-glass-strong);
+    box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+    transition: border-color 0.15s ease;
+}
+#st-overlay-root .ov-composer-inner:focus-within { border-color: rgba(255,255,255,0.28); }
+#st-overlay-root .ov-input {
+    flex: 1 1 auto; border: none; outline: none; background: transparent;
+    color: #e7e7ea; font-family: inherit; font-size: 14.5px; line-height: 1.5;
+    resize: none; max-height: 160px; min-height: 24px;
+    /* 单行时与 42px 按钮垂直居中；多行时仍可长高 */
+    padding: 9px 0;
+    box-sizing: border-box;
+}
+#st-overlay-root .ov-input::placeholder {
+    color: var(--ov-muted);
+    /* 避免某些字体/浏览器把 placeholder 基线压低 */
+    line-height: 1.5;
+    vertical-align: middle;
+}
+#st-overlay-root .ov-send, #st-overlay-root .ov-stop {
+    flex: 0 0 auto; width: 42px; height: 42px; border-radius: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #e7e7ea; border: 1px solid var(--ov-stroke);
+    background: rgba(255,255,255,0.05); transition: background 0.15s ease, border-color 0.15s ease;
+}
+#st-overlay-root .ov-send:hover, #st-overlay-root .ov-stop:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.26); }
+#st-overlay-root .ov-stop { color: #f0a0a0; border-color: rgba(248,113,113,0.35); }
+
+/* ===== 设置抽屉 ===== */
+#st-overlay-root .ov-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
+    width: min(360px, 88%);
+    transform: translateX(100%); transition: transform 0.28s ease;
+    background: var(--ov-glass); border-left: 1px solid var(--ov-stroke-soft);
+    display: flex; flex-direction: column;
+    box-shadow: -12px 0 40px rgba(0,0,0,0.5);
+}
+#st-overlay-root .ov-drawer.ov-open { transform: translateX(0); }
+#st-overlay-root .ov-drawer-scrim {
+    position: absolute; inset: 0; z-index: 19;
+    background: rgba(0,0,0,0.45); opacity: 0; transition: opacity 0.28s ease;
+}
+#st-overlay-root .ov-drawer-scrim.ov-open { opacity: 1; }
+#st-overlay-root .ov-drawer-head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px 0; border-bottom: 1px solid var(--ov-stroke-soft); gap: 8px;
+}
+#st-overlay-root .ov-drawer-tabs { display: flex; gap: 4px; }
+#st-overlay-root .ov-dtab {
+    padding: 9px 14px; border: none; background: transparent; cursor: pointer;
+    color: var(--ov-muted); font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+}
+#st-overlay-root .ov-dtab:hover { color: #eef1f6; }
+#st-overlay-root .ov-dtab.ov-on { color: #fff; border-bottom-color: var(--ov-accent); }
+#st-overlay-root .ov-drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 16px; min-height: 0; position: relative; }
+#st-overlay-root .ov-pane { display: none; flex-direction: column; gap: 18px; }
+#st-overlay-root .ov-pane.ov-on { display: flex; animation: ov-fade-in 0.2s ease; }
+
+/* 代码/文本编辑区（Prompt 编辑器 / 测试文本） */
+#st-overlay-root .ov-code {
+    width: 100%; box-sizing: border-box; min-height: 120px; resize: vertical;
+    background: rgba(0,0,0,0.45); color: #d6e6c8;
+    border: 1px solid var(--ov-stroke); border-radius: 11px; padding: 10px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5;
+}
+#st-overlay-root .ov-code-tall { min-height: 220px; }
+/* 协议编辑器全屏模式：铺满整个抽屉 body，遮住其他内容 */
+#st-overlay-root .ov-code-fullscreen {
+    position: absolute !important; inset: 0; z-index: 30;
+    width: 100% !important; height: 100% !important;
+    min-height: 0 !important; resize: none; border-radius: 0;
+    background: rgba(0,0,0,0.92); font-size: 12.5px;
+    padding-top: 46px;   /* 给浮动退出按钮让出一条，不遮首行文字 */
+    padding-bottom: 28px; /* 给底部 token 计数让位 */
+}
+/* 全屏期间锁住抽屉滚动，textarea 恰好覆盖可视区 */
+#st-overlay-root .ov-drawer-body.ov-code-fs-lock { overflow: hidden; }
+/* 浮动退出按钮：压在全屏 textarea 之上（原按钮行被盖住点不到） */
+#st-overlay-root .ov-code-fs-exit {
+    position: absolute; top: 8px; right: 22px; z-index: 31;
+    background: rgba(20,20,24,0.9);
+}
+#st-overlay-root .ov-code-fs-exit[hidden] { display: none; }
+/* 协议编辑器 token 计数：不显眼灰色 */
+#st-overlay-root .ov-code-tokens {
+    margin: 4px 2px 0;
+    font-size: 11px;
+    line-height: 1.2;
+    color: rgba(160, 164, 176, 0.55);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    pointer-events: none;
+}
+#st-overlay-root .ov-code-tokens.ov-code-tokens-fs {
+    position: absolute;
+    left: 12px;
+    bottom: 8px;
+    z-index: 31;
+    margin: 0;
+    color: rgba(160, 164, 176, 0.5);
+    background: transparent;
+}
+#st-overlay-root .ov-row { display: flex; gap: 8px; flex-wrap: wrap; }
+#st-overlay-root .ov-text {
+    flex: 1.4; background: rgba(0,0,0,0.4); color: #eef1f6;
+    border: 1px solid var(--ov-stroke); border-radius: 8px; padding: 6px 8px; font-size: 12.5px;
+}
+#st-overlay-root .ov-muted { color: var(--ov-muted); }
+#st-overlay-root .ov-btn.ghost { background: transparent; }
+
+/* 素材网格 */
+#st-overlay-root .ov-asset-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#st-overlay-root .ov-asset-actions { display: flex; align-items: center; gap: 8px; }
+#st-overlay-root .ov-asset-editor,
+#st-overlay-root .ov-asset-io {
+    padding: 10px; border: 1px solid var(--ov-stroke-soft); border-radius: 12px;
+    background: rgba(255,255,255,0.035);
+}
+#st-overlay-root .ov-asset-folder-new { width: 100%; box-sizing: border-box; flex: none; }
+#st-overlay-root .ov-asset-breadcrumb { display: flex; align-items: center; gap: 4px; color: var(--ov-muted); font-size: 11px; }
+#st-overlay-root .ov-asset-breadcrumb button { border: none; background: transparent; color: #eef1f6; cursor: pointer; padding: 2px 0; font-size: 11px; }
+#st-overlay-root .ov-asset-grid { columns: 2 130px; column-gap: 10px; }
+#st-overlay-root .ov-asset-empty { break-inside: avoid; text-align: center; color: var(--ov-muted); font-size: 12px; padding: 18px 0; }
+#st-overlay-root .ov-asset-cell { position: relative; display: inline-flex; width: 100%; box-sizing: border-box; flex-direction: column; gap: 4px; margin: 0 0 10px; break-inside: avoid; }
+#st-overlay-root .ov-asset-img { width: 100%; height: auto; max-height: 260px; object-fit: contain; border-radius: 10px; border: 1px solid var(--ov-stroke); background: rgba(255,255,255,0.03); }
+#st-overlay-root .ov-asset-name { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#st-overlay-root .ov-asset-tag,
+#st-overlay-root .ov-asset-path { font-size: 10px; color: var(--ov-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#st-overlay-root .ov-asset-folder { position: relative; cursor: pointer; align-items: center; padding: 10px 8px 8px; border: 1px solid var(--ov-stroke-soft); border-radius: 12px; background: rgba(255,255,255,0.035); }
+#st-overlay-root .ov-asset-folder-name { width: 100%; flex: 0 0 auto; text-align: center; padding: 4px 6px; }
+#st-overlay-root .ov-asset-folder-icon { font-size: 34px; color: rgba(232,192,122,0.9); }
+/* 文件夹马赛克：前 1–5 张素材拼图 */
+#st-overlay-root .ov-asset-folder-mosaic {
+    width: 100%; aspect-ratio: 1 / 1; max-height: 140px;
+    border-radius: 10px; overflow: hidden;
+    display: grid; gap: 2px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--ov-stroke);
+}
+#st-overlay-root .ov-asset-folder-mosaic[data-n="1"] { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="2"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="3"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="3"] > img:first-child { grid-row: 1 / span 2; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="4"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="5"] { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#st-overlay-root .ov-asset-folder-mosaic[data-n="5"] > img:first-child { grid-column: 1 / span 2; grid-row: 1 / span 2; }
+#st-overlay-root .ov-asset-folder-mosaic img {
+    width: 100%; height: 100%; object-fit: cover; display: block; min-height: 0; min-width: 0;
+}
+#st-overlay-root .ov-asset-folder-mosaic.ov-empty {
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(232,192,122,0.9); font-size: 34px;
+}
+#st-overlay-root .ov-asset-folder-menu {
+    position: absolute; bottom: 6px; right: 6px; z-index: 2;
+    width: 24px; height: 24px; border-radius: 8px; border: none;
+    background: rgba(0,0,0,0.55); color: #dbe4ff; cursor: pointer; font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    opacity: 0.75; transition: opacity 0.15s, background 0.15s;
+}
+#st-overlay-root .ov-asset-folder:hover .ov-asset-folder-menu { opacity: 1; }
+#st-overlay-root .ov-asset-folder-menu:hover { background: rgba(96,165,250,0.28); }
+#st-overlay-root .ov-asset-folder-dropdown {
+    position: absolute; bottom: 32px; right: 6px; z-index: 3;
+    min-width: 110px; padding: 4px;
+    border-radius: 10px; border: 1px solid var(--ov-stroke);
+    background: rgba(18,18,22,0.96); box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+}
+#st-overlay-root .ov-asset-folder-dropdown[hidden] { display: none; }
+#st-overlay-root .ov-asset-folder-drop-item {
+    width: 100%; text-align: left; border: none; background: transparent;
+    color: #eef1f6; font-size: 12px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+}
+#st-overlay-root .ov-asset-folder-drop-item:hover { background: rgba(255,255,255,0.08); }
+#st-overlay-root .ov-asset-folder-drop-item.ov-danger { color: #fca5a5; }
+#st-overlay-root .ov-asset-folder-drop-item.ov-danger:hover { background: rgba(248,113,113,0.15); }
+#st-overlay-root .ov-asset-folder.ov-drop { outline: 2px solid var(--ov-accent); background: rgba(255,255,255,0.08); }
+#st-overlay-root .ov-asset-path::before { content: "路径："; opacity: 0.72; }
+#st-overlay-root .ov-asset-del {
+    position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 7px;
+    border: none; background: rgba(0,0,0,0.6); color: #fca5a5; cursor: pointer; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s;
+}
+#st-overlay-root .ov-asset-eye {
+    position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 7px;
+    border: none; background: rgba(0,0,0,0.55); color: #dbe4ff; cursor: pointer; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center; opacity: 0.85; transition: opacity 0.15s, background 0.15s;
+}
+#st-overlay-root .ov-asset-cell:hover .ov-asset-del,
+#st-overlay-root .ov-asset-cell:hover .ov-asset-eye { opacity: 1; }
+#st-overlay-root .ov-asset-del:hover { background: rgba(248,113,113,0.25); }
+#st-overlay-root .ov-asset-eye:hover { background: rgba(96,165,250,0.28); }
+#st-overlay-root .ov-asset-hidden { opacity: 0.55; }
+#st-overlay-root .ov-asset-hidden .ov-asset-img { filter: grayscale(0.55); }
+.ov-asset-modal {
+    position: fixed; inset: 0; z-index: 90000; display: flex; align-items: center; justify-content: center;
+    padding: 0; background: rgba(0,0,0,0.72);
+}
+.ov-asset-modal[hidden] { display: none; }
+.ov-asset-modal-card {
+    width: min(66vw, 1280px); height: min(66vh, 920px); max-width: 96vw; max-height: 96vh;
+    overflow: hidden; display: flex; flex-direction: column; gap: 0;
+    padding: 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); background: rgba(18,18,22,0.92);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.ov-asset-modal-img { flex: 1 1 auto; width: 100%; min-height: 0; max-height: calc(66vh - 130px); object-fit: contain; border-radius: 12px; background: rgba(0,0,0,0.4); }
+.ov-asset-modal-form { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding-top: 12px; }
+.ov-asset-modal .ov-field { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 4px 0; color: #e7e7ea; }
+.ov-asset-modal .ov-field > span:first-child { flex: 1; }
+.ov-asset-modal .ov-text {
+    flex: 1.4; background: rgba(0,0,0,0.4); color: #eef1f6;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 6px 8px; font-size: 12.5px;
+}
+.ov-asset-modal .ov-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ov-asset-modal .ov-btn {
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 9px; padding: 7px 12px;
+    background: rgba(255,255,255,0.06); color: #eef1f6; cursor: pointer; font-size: 12.5px;
+}
+.ov-asset-modal .ov-btn.ghost { background: transparent; }
+.ov-asset-modal .ov-btn:hover { background: rgba(255,255,255,0.13); }
+
+/* 测试图位行（每个 role 一行：标签 + 缩略图 + 选图 + 清除） */
+#st-overlay-root .ov-test-img {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--ov-stroke-soft);
+}
+#st-overlay-root .ov-test-img-label { flex: 0 0 84px; font-size: 12px; color: var(--ov-muted); }
+#st-overlay-root .ov-test-img-thumb {
+    width: 48px; height: 36px; object-fit: cover; border-radius: 8px;
+    border: 1px solid var(--ov-stroke); background: rgba(255,255,255,0.03);
+}
+#st-overlay-root .ov-test-img-clear { margin-left: auto; }
+
+/* Log 查看器（钉底，默认折叠） */
+#st-overlay-root .ov-log { flex: 0 0 auto; border-top: 1px solid var(--ov-stroke-soft); background: rgba(0,0,0,0.25); }
+#st-overlay-root .ov-log-head {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border: none; background: transparent; cursor: pointer;
+    color: var(--ov-muted); font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+}
+#st-overlay-root .ov-log-head:hover { color: #eef1f6; }
+#st-overlay-root .ov-log-caret { transition: transform 0.18s ease; margin-right: 4px; font-size: 10px; }
+#st-overlay-root .ov-log[data-open="true"] .ov-log-caret { transform: rotate(90deg); }
+#st-overlay-root .ov-log-actions { display: flex; align-items: center; gap: 8px; }
+#st-overlay-root .ov-log-count { font-variant-numeric: tabular-nums; font-size: 11px; opacity: 0.7; }
+#st-overlay-root .ov-log-clear { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 6px; }
+#st-overlay-root .ov-log-clear:hover { background: rgba(255,255,255,0.1); color: #fff; }
+#st-overlay-root .ov-log-body { display: none; max-height: 180px; overflow-y: auto; padding: 0 14px 12px; }
+#st-overlay-root .ov-log[data-open="true"] .ov-log-body { display: block; }
+#st-overlay-root .ov-log-row { font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.5; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04); word-break: break-word; }
+#st-overlay-root .ov-log-warn { color: #facc15; }
+#st-overlay-root .ov-log-error { color: #fca5a5; }
+#st-overlay-root .ov-log-log { color: rgba(231,231,234,0.75); }
+
+#st-overlay-root .ov-set-group { display: flex; flex-direction: column; gap: 10px; }
+#st-overlay-root .ov-set-title { font-size: 11.5px; font-weight: 600; letter-spacing: 0.5px; color: var(--ov-muted); text-transform: uppercase; }
+#st-overlay-root .ov-field { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 4px 0; }
+#st-overlay-root .ov-field.checkbox { cursor: pointer; }
+#st-overlay-root .ov-field > span:first-child { flex: 1; }
+#st-overlay-root .ov-field input[type="range"] { flex: 1.4; accent-color: var(--ov-accent); }
+#st-overlay-root .ov-select {
+    background: rgba(0,0,0,0.4); color: #eef1f6; border: 1px solid var(--ov-stroke);
+    border-radius: 8px; padding: 5px 8px; font-size: 12.5px;
+}
+#st-overlay-root .ov-color {
+    width: 34px; height: 26px; padding: 0; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--ov-stroke); background: transparent;
+}
+#st-overlay-root .ov-color:disabled { opacity: 0.42; cursor: not-allowed; }
+#st-overlay-root .ov-semantic-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+#st-overlay-root .ov-follow-option { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--ov-muted); font-size: 11px; cursor: pointer; }
+#st-overlay-root .ov-follow-option input { margin: 0; accent-color: var(--ov-accent); }
+#st-overlay-root .ov-seg { display: flex; gap: 6px; }
+#st-overlay-root .ov-seg button {
+    flex: 1; padding: 7px 4px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--ov-stroke); background: rgba(255,255,255,0.03);
+    color: var(--ov-muted); font-size: 12px; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+#st-overlay-root .ov-seg button:hover { color: #eef1f6; }
+#st-overlay-root .ov-seg button.ov-on { color: #fff; border-color: var(--ov-accent); background: rgba(255,255,255,0.1); }
+#st-overlay-root .ov-btn {
+    padding: 8px 13px; border-radius: 11px; border: 1px solid var(--ov-stroke);
+    background: rgba(255,255,255,0.06); color: #eef1f6; cursor: pointer; font-size: 12.5px;
+    transition: background 0.15s ease;
+}
+#st-overlay-root .ov-btn:hover { background: rgba(255,255,255,0.13); }
+#st-overlay-root .ov-hint { font-size: 11.5px; line-height: 1.55; color: var(--ov-muted); }
+
+/* ===== HUD 组件（左下角状态条；由 components.js 生成） ===== */
+#st-overlay-root .comp {
+    background: var(--ov-glass-strong); border: 1px solid var(--ov-stroke);
+    border-radius: 13px; padding: 11px 13px; box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    animation: ov-rise-in 0.3s ease;
+}
+#st-overlay-root .comp.progressbar { width: 100%; }
+#st-overlay-root .pb-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 13px; }
+#st-overlay-root .pb-label { font-weight: 600; letter-spacing: 0.4px; }
+#st-overlay-root .pb-num { font-variant-numeric: tabular-nums; opacity: 0.75; font-size: 11px; }
+#st-overlay-root .pb-track { width: 100%; height: 11px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; }
+#st-overlay-root .pb-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--ov-accent), var(--ov-accent-2)); border-radius: 999px; transition: width 0.4s ease; }
+#st-overlay-root .comp.stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+#st-overlay-root .stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ov-muted); }
+#st-overlay-root .stat-value { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+#st-overlay-root .stat-sep { opacity: 0.4; margin: 0 3px; font-weight: 400; font-size: 16px; }
+#st-overlay-root .stat-max { font-size: 16px; opacity: 0.6; font-weight: 500; }
+#st-overlay-root .stat-unit { font-size: 11px; color: var(--ov-muted); }
+#st-overlay-root .comp.alert { display: flex; align-items: center; gap: 10px; font-size: 12.5px; line-height: 1.4; }
+#st-overlay-root .alert-glyph { width: 20px; height: 20px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 700; font-size: 11px; }
+#st-overlay-root .alert-info .alert-glyph { background: var(--ov-accent); color: #1a1a1a; }
+#st-overlay-root .alert-warn { border-color: rgba(250,204,21,0.4); }
+#st-overlay-root .alert-warn .alert-glyph { background: #facc15; color: #3a2c00; }
+#st-overlay-root .alert-danger { border-color: rgba(248,113,113,0.45); }
+#st-overlay-root .alert-danger .alert-glyph { background: #f87171; color: #2a0606; }
+#st-overlay-root .comp.divider { display: flex; align-items: center; gap: 10px; color: var(--ov-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: transparent; border: none; box-shadow: none; padding: 3px 0; }
+#st-overlay-root .comp.divider::before, #st-overlay-root .comp.divider::after { content: ""; flex: 1; height: 1px; background: var(--ov-stroke); }
+#st-overlay-root .comp.divider.no-label::before { display: none; }
+
+/* ===== 占位通用 ===== */
+#st-overlay-root .ov-placeholder { /* 标记类，具体样式见各层 */ }
+
+/* ===== 入口按钮：fixed 钉右上角，纯黑磨砂，可拖（draggable.js） ===== */
+#st-overlay-launch {
+    position: fixed; top: 6px; right: 10px; z-index: 4100;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+    font-size: 14px; color: #d8d8dd;
+    background: rgba(16,16,18,0.82); box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.14);
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    touch-action: none; user-select: none;
+}
+#st-overlay-launch:hover { transform: scale(1.08); background: rgba(28,28,32,0.92); border-color: rgba(255,255,255,0.3); color: #fff; }
+#st-overlay-launch:active { transform: scale(0.94); }
+#st-overlay-launch.ov-dragging { transform: scale(1.12); cursor: grabbing; box-shadow: 0 6px 20px rgba(0,0,0,0.6); transition: none; }
+#st-overlay-launch.ov-active { border-color: rgba(255,255,255,0.4); box-shadow: 0 0 0 2px rgba(255,255,255,0.12), 0 4px 14px rgba(0,0,0,0.55); }
+
+/* ===== 可移动虚拟按键 ===== */
+#st-overlay-root .ov-key-button {
+    position: fixed; right: 18px; bottom: 92px; z-index: 4101;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0;
+    width: 40px; min-width: 40px; height: 40px; padding: 0;
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 12px;
+    color: #e7e7ea; background: rgba(16,16,18,0.9);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer;
+    font: 600 12px/1 system-ui, -apple-system, sans-serif;
+    touch-action: none; user-select: none;
+}
+#st-overlay-root .ov-key-button i { font-size: 14px; opacity: 0.8; }
+#st-overlay-root .ov-key-button:hover { border-color: rgba(255,255,255,0.38); background: rgba(30,30,34,0.96); }
+#st-overlay-root .ov-key-button:active, #st-overlay-root .ov-key-button.ov-key-pressed { transform: scale(0.95); }
+#st-overlay-root .ov-key-button.ov-dragging { cursor: grabbing; opacity: 0.8; }
+#st-overlay-root .ov-key-button.ov-key-online { border-color: rgba(86,211,133,0.65); }
+#st-overlay-root .ov-key-button.ov-key-error { border-color: rgba(255,101,101,0.75); }
+#st-overlay-root .ov-key-button.ov-key-docked { position: static; flex: 0 0 40px; border: none; background: transparent; box-shadow: none; }
+#st-overlay-root .ov-key-button.ov-key-docked:hover { border: none; background: transparent; }
+#st-overlay-root #set-keybutton-status[data-state="online"] { color: #72dc9b; }
+#st-overlay-root #set-keybutton-status[data-state="error"] { color: #ff8585; }
+
+/* ===== 背包：角标在道具按钮上 ===== */
+#st-overlay-root #ov-props-btn {
+    position: relative;
+}
+/* 中世纪行囊背包图标（内联 SVG，白色） */
+#st-overlay-root .ov-bag-ico {
+    width: 19px; height: 19px; display: block;
+    color: #fff;
+}
+#st-overlay-root #ov-props-btn:hover .ov-bag-ico { color: #fff; }
+#st-overlay-root .ov-bag-count {
+    position: absolute; top: -6px; right: -6px;
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+    background: var(--ov-accent, #d8d8dd); color: #111;
+    font-size: 9.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+}
+#st-overlay-root .ov-bag-count[hidden] { display: none; }
+
+/* ===== 抽屉「道具」标签页 ===== */
+#st-overlay-root .ov-props-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; margin-top: 6px;
+}
+/* 背包网格（在抽屉内，与道具共享空间） */
+#st-overlay-root .ov-bag-section { margin-top: 14px; }
+#st-overlay-root .ov-bag-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+}
+#st-overlay-root .ov-bag-cell { position: relative; display: flex; flex-direction: column; gap: 5px; }
+#st-overlay-root .ov-bag-img {
+    height: 88px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.03); display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 6px; font-size: 10.5px; color: rgba(255,255,255,0.5);
+}
+#st-overlay-root .ov-bag-cap { font-size: 11px; line-height: 1.4; color: var(--ov-muted, #999); text-align: center; }
+#st-overlay-root .ov-bag-actions {
+    position: absolute; top: 5px; right: 5px; z-index: 2; display: inline-flex; gap: 3px;
+}
+#st-overlay-root .ov-bag-actions button {
+    width: 22px; height: 22px; padding: 0; border: none; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #eef1f6; background: rgba(0,0,0,0.58); cursor: pointer;
+    opacity: 0.82; transition: background 0.15s ease, opacity 0.15s ease;
+}
+#st-overlay-root .ov-bag-actions button:hover { opacity: 1; }
+#st-overlay-root .ov-bag-eye:hover { background: rgba(96,165,250,0.38); }
+#st-overlay-root .ov-bag-delete:hover { background: rgba(248,113,113,0.38); }
+#st-overlay-root .ov-bag-empty { grid-column: 1 / -1; text-align: center; color: var(--ov-muted, #888); font-size: 12px; padding: 24px 0; }
+#st-overlay-root .ov-prop-card { position: relative; }
+#st-overlay-root .ov-prop {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 12px 8px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--ov-stroke); background: rgba(8,8,10,0.6); color: #eef1f6;
+    font-size: 12px; transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+}
+#st-overlay-root .ov-prop:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.28); }
+#st-overlay-root .ov-prop:active { transform: scale(0.94); }
+#st-overlay-root .ov-prop-glyph { font-size: 18px; display: inline-block; }
+#st-overlay-root .ov-prop.ov-rolling .ov-prop-glyph { animation: ov-prop-roll 0.6s ease; }
+@keyframes ov-prop-roll {
+    0% { transform: rotate(0) scale(1); }
+    30% { transform: rotate(220deg) scale(1.15); }
+    70% { transform: rotate(360deg) scale(0.95); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+#st-overlay-root .ov-prop-add { color: var(--ov-muted); border-style: dashed; }
+#st-overlay-root .ov-prop-toggle {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,0.7); color: #fca5a5; font-size: 13px; line-height: 16px; text-align: center;
+    cursor: pointer; opacity: 0; transition: opacity 0.15s ease; z-index: 2;
+}
+#st-overlay-root .ov-prop-card:hover .ov-prop-toggle { opacity: 1; }
+#st-overlay-root .ov-prop-toggle.ov-prop-minus { color: #fca5a5; }
+#st-overlay-root .ov-prop-on .ov-prop { border-color: var(--ov-accent); }
+
+/* ===== 道具浮层可交互态 ===== */
+#st-overlay-root .ov-item-float.ov-clickable { cursor: pointer; }
+#st-overlay-root .ov-item-float.ov-clickable:hover { border-color: rgba(255,255,255,0.45); }
+#st-overlay-root .ov-item-float.ov-item-locked { opacity: 0.7; cursor: default; }
+#st-overlay-root .ov-item-reveal {
+    margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+    background: rgba(0,0,0,0.4); border-left: 2px solid var(--ov-accent);
+    color: var(--ov-quote); font-size: 12px; line-height: 1.5;
+    animation: ov-reveal-in 0.25s ease;
+    white-space: pre-wrap;
+}
+#st-overlay-root .ov-item-extra {
+    margin-top: 6px; padding: 8px 10px; border-radius: 8px;
+    background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12);
+    color: #eef1f6; font-size: 12px; line-height: 1.55;
+    animation: ov-reveal-in 0.25s ease;
+    white-space: pre-wrap;
+}
+#st-overlay-root .ov-item-float.ov-item-open { z-index: 6; }
+#st-overlay-root .ov-bag-reveal {
+    margin-top: 4px; padding: 6px 8px; border-radius: 8px;
+    background: rgba(0,0,0,0.4); border-left: 2px solid var(--ov-accent);
+    color: var(--ov-quote); font-size: 11px; line-height: 1.45; white-space: pre-wrap;
+}
+@keyframes ov-reveal-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ===== 抽屉标签角标计数 ===== */
+#st-overlay-root .ov-dtab-count {
+    margin-left: 5px; min-width: 15px; padding: 0 5px; border-radius: 8px;
+    background: rgba(255,255,255,0.12); font-size: 10px; color: #cfd3dc;
+}
+
+/* ===== 折叠母组（设置面板） ===== */
+#st-overlay-root .ov-collapse { border: none; border-bottom: 1px solid var(--ov-stroke-soft); margin: 0; padding: 0; }
+#st-overlay-root .ov-collapse + .ov-collapse { margin-top: 2px; }
+#st-overlay-root .ov-collapse-head {
+    cursor: pointer; padding: 10px 4px; font-size: 13px; color: #eef1f6; user-select: none;
+    display: flex; align-items: center; gap: 8px; list-style: none;
+}
+#st-overlay-root .ov-collapse-head::-webkit-details-marker { display: none; }
+#st-overlay-root .ov-collapse-caret { color: var(--ov-muted); width: 12px; display: inline-block; text-align: center; }
+#st-overlay-root .ov-collapse-body { padding: 2px 4px 12px; }
+#st-overlay-root .ov-hint-inline { font-size: 11px; color: var(--ov-muted); margin-left: 6px; min-width: 50px; }
+
+/* 滑条右侧的数值框：平时就是一行数字（无边框），点进去才显出黑底毛玻璃圆角方框可改。 */
+#st-overlay-root .ov-num {
+    flex: none; width: 64px; box-sizing: border-box;
+    font: inherit; font-size: 11.5px; text-align: right;
+    color: var(--ov-muted); background: transparent;
+    border: 1px solid transparent; border-radius: 8px;
+    padding: 3px 6px; margin-left: 2px; outline: none; cursor: text;
+    transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+    -moz-appearance: textfield;
+}
+#st-overlay-root .ov-num::-webkit-outer-spin-button,
+#st-overlay-root .ov-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#st-overlay-root .ov-num:hover { color: rgba(238,241,246,0.8); border-color: rgba(255,255,255,0.12); }
+#st-overlay-root .ov-num:focus {
+    text-align: center; color: rgba(238,241,246,0.95);
+    background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.22);
+    backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+/* 数值框接管了读数，语义提示（ms/字、时分秒）缩窄跟在后面 */
+#st-overlay-root .ov-field .ov-num + .ov-hint-inline { min-width: 0; margin-left: 8px; }
+#st-overlay-root .ov-clickable { cursor: pointer; }
+#st-overlay-root .ov-bag-cell.ov-clickable:hover .ov-bag-img { border-color: rgba(255,255,255,0.4); }
+
+/* ===== 无操作黑幕 ===== */
+/* 盖住整个 Sandbox（含背包查看器 z-index:100000 与浮动按键）。
+   opacity/transition-duration 由 idle-dim.js 直接写内联样式：
+   变黑 3s 渐入，唤醒时把时长清 0 → 瞬间还原，不留回跳的那一帧。 */
+#st-overlay-root .ov-idle-dim {
+    position: fixed; inset: 0; z-index: 100001;
+    background: #000; opacity: 0; pointer-events: none;
+    transition: opacity 3s linear;
+}
+
+/* ===== 背包物品全屏查看 ===== */
+.ov-item-viewer {
+    position: fixed; inset: 0; z-index: 100000; display: flex; align-items: stretch; justify-content: center;
+    padding: 24px; background: rgba(0,0,0,0.86);
+}
+.ov-item-viewer[hidden] { display: none; }
+.ov-item-viewer-card {
+    position: relative; width: min(100%, 1500px); min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 18px; background: rgba(16,16,20,0.94); box-shadow: 0 18px 60px rgba(0,0,0,0.5);
+}
+.ov-item-viewer-media {
+    flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: 42px 28px 18px; background: rgba(0,0,0,0.28);
+}
+.ov-item-viewer-media img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; }
+.ov-item-viewer-placeholder { color: rgba(255,255,255,0.5); font-size: 18px; }
+.ov-item-viewer-info {
+    flex: 0 0 auto; padding: 14px 20px 18px; border-top: 1px solid rgba(255,255,255,0.12);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ov-item-viewer-title { color: #f3f5fa; font-size: 15px; font-weight: 650; line-height: 1.45; }
+.ov-item-viewer-detail { margin-top: 5px; color: rgba(231,231,234,0.72); font-size: 12px; line-height: 1.55; }
+.ov-item-viewer-close {
+    position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px;
+    border: none; border-radius: 8px; color: #fff; background: rgba(0,0,0,0.58); cursor: pointer;
+}
+.ov-item-viewer-close:hover { background: rgba(248,113,113,0.42); }
+
+/* ===== 窄屏 ===== */
+@media (max-width: 760px) {
+    #st-overlay-root .ov-sprite { display: none; }
+    #st-overlay-root .ov-item-float { width: 100px; }
+    #st-overlay-root .ov-status { width: 44%; }
+}

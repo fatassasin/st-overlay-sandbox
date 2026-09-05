@@ -1,0 +1,6 @@
+{
+  "name": "st-overlay-sandbox-key",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.mjs"
+}
