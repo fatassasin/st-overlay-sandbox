@@ -19,6 +19,13 @@
 @keyframes ov-slide-in-up    { from { transform: translateY(48px); opacity: 0; filter: blur(2px); } to { transform: translateY(0); opacity: 1; filter: blur(0); } }
 @keyframes ov-slide-in-down  { from { transform: translateY(-48px); opacity: 0; filter: blur(2px); } to { transform: translateY(0); opacity: 1; filter: blur(0); } }
 
+/* [hidden] 兜底。本文件几乎每条规则都带 #st-overlay-root 前缀（特异性 1,1,0），
+   而浏览器默认表里的 [hidden]{display:none} 只有 0,1,0——凡是自己写了 display 的组件，
+   JS 里的 el.hidden = true 就被彻底架空，元素照显不误（音频状态条即栽在这上面：
+   hideAudioState() 一直在正常调用，bar 却从来没消失过）。
+   用 !important 抢回来：带 hidden 属性的元素本就该不可见，没有例外需要保留。 */
+#st-overlay-root [hidden] { display: none !important; }
+
 /* ===== 全屏根容器 + 可调变量 ===== */
 #st-overlay-root {
     position: fixed;
@@ -603,8 +610,8 @@
     position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
     z-index: 9; display: flex; align-items: center; gap: 10px;
     max-width: min(72vw, var(--ov-panel-width)); padding: 7px 12px;
-    border-radius: 999px; background: rgba(20,20,24,0.48); color: rgba(238,241,246,0.82);
-    border: 1px solid rgba(255,255,255,0.11); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-radius: 999px; background: rgba(16,16,20,0.82); color: rgba(238,241,246,0.82);
+    border: 1px solid rgba(255,255,255,0.11);
     font-size: 12px; pointer-events: none;
 }
 #st-overlay-root .ov-audio-state b { color: rgba(238,241,246,0.95); font-weight: 600; }
