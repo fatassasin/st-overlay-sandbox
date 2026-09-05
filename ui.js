@@ -310,7 +310,7 @@ function buildSettingsPane() {
             <div class="ov-collapse-body">
                 <label class="ov-field checkbox"><input type="checkbox" id="set-keybutton-enabled" /><span>显示可移动虚拟按键</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-keybutton-docked" /><span>固定在发送键左侧（无边框）</span></label>
-                <label class="ov-field"><span>模拟键位</span>
+                <label class="ov-field"><span>麦克风键位（mic）</span>
                     <select id="set-keybutton-code" class="ov-select">
                         <option value="AltRight">Right Alt</option><option value="AltLeft">Left Alt</option>
                         <option value="ControlRight">Right Ctrl</option><option value="ControlLeft">Left Ctrl</option>
@@ -679,6 +679,17 @@ function wireRangeNumbers(scope) {
 }
 
 // ===== 测试面板 =====
+// 随扩展附带的测试图（test-assets/），供「填入内置测试图」一键铺满所有图位。
+// 按 role 分池、在池内循环取，而不是写死 slot key——样例文本里的角色名/道具名一改，
+// 写死的 key 就全部失配，按角色顺序分配则永远对得上。
+const BUILTIN_TEST_IMAGES = {
+    bg:     ['bg-beacon.webp', 'bg-beacon-lit.webp'],
+    sprite: ['sprite-lira.webp', 'sprite-lira-smiling.webp'],
+    cg:     ['bg-beacon-lit.webp'],
+    item:   ['item-compass.webp', 'item-cloak.webp'],
+};
+const builtinTestUrl = (file) => new URL(`./test-assets/${file}`, import.meta.url).href;
+
 // 具名图位：从当前测试文本解析出每一个「独立图位」（背景/每个角色/每张 CG/每个道具），
 //   每位给一个独立上传框。图位键由 assets.slotKeyFor(role, descriptor) 生成，与 resolveImage 完全一致，
 //   所以上传的图会精确落到对应那一张（如「黄铜罗盘」和「油布斗篷」互不覆盖）。
@@ -722,6 +733,10 @@ function buildTestPane() {
         <div class="ov-set-group">
             <div class="ov-set-title">注入测试图（每个图位独立上传）</div>
             <div class="ov-hint">下面每一项对应文本里的一个具体图位（背景／每个角色／每张CG／每个道具）。上传后点「渲染到阅读器」在对应位置预览；切回真实聊天自动清除。推荐分辨率见每项提示。</div>
+            <div class="ov-row">
+                <button class="ov-btn ghost" id="test-fill-builtin" type="button">填入内置测试图</button>
+                <button class="ov-btn ghost" id="test-clear-imgs" type="button">清空全部</button>
+            </div>
             <div id="test-slots"></div>
             <div class="ov-hint" id="test-slots-empty" hidden>当前文本解析不出可上传的图位。</div>
         </div>
@@ -794,6 +809,29 @@ function buildTestPane() {
         markLang();
         rebuildSlots();   // 换语言 → 角色名/道具名变了 → 重建图位
     }));
+
+    q('#test-fill-builtin').addEventListener('click', () => {
+        const used = {};   // role → 该角色已分配到第几张，用于在池内循环
+        for (const slot of collectSlots(ta.value)) {
+            const pool = BUILTIN_TEST_IMAGES[slot.role];
+            if (!pool || !pool.length) continue;
+            const n = used[slot.role] || 0;
+            used[slot.role] = n + 1;
+            setTestImage(slot.key, builtinTestUrl(pool[n % pool.length]));
+        }
+        rebuildSlots();
+        loadTestMessage(ta.value);
+    });
+    // test-assets/ 未随仓库发布（见 .gitignore）。没有这些文件时按钮点了也只会填出一堆 404，
+    // 不如直接藏掉——探一张即可，六张要么都在要么都不在。
+    fetch(builtinTestUrl(BUILTIN_TEST_IMAGES.bg[0]), { method: 'HEAD' })
+        .then((r) => { if (!r.ok) q('#test-fill-builtin')?.remove(); })
+        .catch(() => q('#test-fill-builtin')?.remove());
+    q('#test-clear-imgs').addEventListener('click', () => {
+        for (const slot of collectSlots(ta.value)) setTestImage(slot.key, null);
+        rebuildSlots();
+        loadTestMessage(ta.value);
+    });
 
     q('#test-render').addEventListener('click', () => { loadTestMessage(ta.value); closeDrawer(); });
     q('#test-reset').addEventListener('click', () => {

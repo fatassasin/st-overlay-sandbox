@@ -4,7 +4,7 @@
 //   2) 把每段内部 JSON 解析成指令对象
 //   3) 按 op 分发，操作舞台元素：add / update / remove / clear
 
-import { createComponent, updateComponent, removeSpec, clearSpecs, getSpec } from './components.js';
+import { createComponent, updateComponent, removeSpec, clearSpecs, getSpec, removeSpecsByOrigin } from './components.js';
 import { getStatus } from './overlay.js';
 
 // 匹配 <overlay> ... </overlay>，非贪婪，跨行，忽略大小写
@@ -78,14 +78,14 @@ function cssEscape(s) {
  * 按指令分发执行：add / update / remove / clear。
  * @param {object} payload
  */
-export function applyInstruction(payload) {
+export function applyInstruction(payload, origin = '') {
     if (!payload || typeof payload !== 'object') return;
     const stage = getStatus();
     if (!stage) return;
 
     switch (payload.op) {
         case 'add': {
-            const node = createComponent(payload);
+            const node = createComponent(payload, origin);
             if (!node) return;
             // id 已存在则替换（幂等，避免重复堆叠）
             const existing = findNode(payload.id);
@@ -125,8 +125,21 @@ export function applyInstruction(payload) {
     }
 }
 
-/** 便捷批量执行。 */
-export function applyAll(payloads) {
+/** 便捷批量执行。origin 透传给 add 指令，供后续按来源定点清理。 */
+export function applyAll(payloads, origin = '') {
     if (!Array.isArray(payloads)) return;
-    for (const p of payloads) applyInstruction(p);
+    for (const p of payloads) applyInstruction(p, origin);
+}
+
+/** 按来源清除组件（DOM + spec 登记）。
+ *  测试预览退出时调 clearByOrigin('test')：只摘测试灌进来的状态条，
+ *  真实消息创建的组件保持原样——两者共用同一个 _specs，不能用 clearSpecs 一把梭。 */
+export function clearByOrigin(origin) {
+    const ids = removeSpecsByOrigin(origin);
+    if (!ids.length) return 0;
+    for (const id of ids) {
+        const node = findNode(id);
+        if (node) node.remove();
+    }
+    return ids.length;
 }

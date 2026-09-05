@@ -155,6 +155,7 @@ export function rebuild(animate = false, landing = 'last', opts = {}) {
     const savedScrollTop = preserveScroll ? (q('#ov-panel-text')?.scrollTop || 0) : 0;
     const prev = floors[pos.floorIdx] ? { chatIndex: floors[pos.floorIdx].chatIndex, fragIdx: pos.fragIdx } : null;
     clearTestImages();   // 真实重建：清掉测试 Tab 上传的图，避免污染真实聊天
+    clearTestHud();      // 同理清掉测试灌进状态条的组件（真实消息创建的按 origin 保留）
     floors = [];
     if (c && Array.isArray(c.chat)) {
         let sceneCarry = undefined;
@@ -292,6 +293,14 @@ function resetStageState({ keepStream = false, preserveScroll = false } = {}) {
 /** 渲染当前片段到舞台各层。animate=true 时正文走打字机（仅前进/新内容）。
  *  opts.keepStream：生成中打开时跳过对 stream typewriter 的清场；opts.keepThinking 保留思维链 bar。 */
 function renderCurrent(animate = false, opts = {}) {
+    // 离开测试预览：合成楼层永远挂在 floors[] 末尾，一旦导航落到它前面的真实楼层，
+    // 就说明用户已经切回正文，这时把它摘掉。否则它会一直挂着，翻回末尾还能再看到
+    // 已经作废的测试内容，而 exitTestPreview 只在切离「测试」Tab 时才触发——
+    // 而 #test-render 渲染完就直接 closeDrawer()，那条路径根本不经过 Tab 切换。
+    // HUD 组件按 origin 定点清：测试与真实消息的组件共用同一个 store，
+    // 只有标了 'test' 的会被摘掉，真实楼层的状态条留着。
+    const tail = floors[floors.length - 1];
+    if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestHud(); }
     resetStageState({ keepStream: !!opts.keepStream, preserveScroll: !!opts.preserveScroll });
     const frag = currentFragment();
     if (!frag) { renderEmpty(); return; }
@@ -1905,6 +1914,7 @@ export function jumpToLatest() {
  */
 export function loadTestMessage(mes) {
     floors = floors.filter((f) => !f.synthetic);
+    clearTestHud();  // 先清上一轮测试的组件：新文本若删掉了某个 id，旧节点不该留在状态条里
     const parsed = parseStageMessage(String(mes ?? ''));
     if (!parsed.fragments.length) return;
     // scene 结转：继承当前末楼最后 scene
@@ -1931,13 +1941,23 @@ export function loadTestMessage(mes) {
 export function exitTestPreview() {
     if (!floors.some((f) => f.synthetic)) return;
     floors = floors.filter((f) => !f.synthetic);
+    clearTestHud();
     rebuild(false, 'last');
 }
 
-// 延迟 import 避免循环：测试 HUD 应用走 parser.applyAll
-let _applyAll = null;
+// 延迟 import 避免循环：测试 HUD 应用走 parser。
+// 缓存整个模块而不只是 applyAll——clearTestHud 要在同步的 renderCurrent 里调，
+// 不能等 await。没缓存就意味着 applyTestHud 从没跑过，也就不可能有 test 组件，
+// 这时直接 no-op 是对的。
+let _parser = null;
 async function applyTestHud(hudOps) {
     if (!hudOps || !hudOps.length) return;
-    if (!_applyAll) { const m = await import('./parser.js'); _applyAll = m.applyAll; }
-    _applyAll(hudOps);
+    if (!_parser) _parser = await import('./parser.js');
+    _parser.applyAll(hudOps, 'test');
+}
+
+/** 摘掉测试预览灌进 HUD 的组件（按 origin 定点清，不碰真实消息的状态条）。 */
+function clearTestHud() {
+    if (!_parser) return;
+    try { _parser.clearByOrigin('test'); } catch (_) {}
 }

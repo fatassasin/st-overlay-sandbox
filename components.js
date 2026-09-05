@@ -29,12 +29,15 @@ function buildNode(spec) {
 
 /**
  * 创建组件并登记 spec。供 parser 的 add 指令与元素面板调用。
+ * @param {object} spec
+ * @param {string} [origin] 来源标记。测试预览灌进来的组件传 'test'，
+ *   退出预览时按此标记定点清除，不会误伤真实消息创建的组件（两者共用同一个 _specs）。
  * @returns {HTMLElement|null}
  */
-export function createComponent(spec) {
+export function createComponent(spec, origin = '') {
     if (!spec || !spec.id) return null;
     const node = buildNode(spec);
-    if (node) _specs.set(spec.id, { ...spec });
+    if (node) _specs.set(spec.id, { ...spec, __origin: origin });
     return node;
 }
 
@@ -56,7 +59,9 @@ export function listSpecs() {
 export function updateComponent(id, patch) {
     const prev = _specs.get(id);
     if (!prev) return null;
-    const next = { ...prev, ...patch, id, type: prev.type }; // id/type 不可被 patch 改写
+    // id/type/__origin 不可被 patch 改写：前两者是身份，后者是清理归属，
+    // 都不能让 AI 发来的 JSON 顺手覆盖掉。
+    const next = { ...prev, ...patch, id, type: prev.type, __origin: prev.__origin };
     _specs.set(id, next);
     return buildNode(next);
 }
@@ -69,6 +74,17 @@ export function removeSpec(id) {
 /** 清空全部 spec 登记 */
 export function clearSpecs() {
     _specs.clear();
+}
+
+/** 按来源移除 spec 登记，返回被移除的 id 列表（DOM 由调用方按 id 摘除）。
+ *  给测试预览退出用：只清 origin==='test' 的组件，真实消息创建的状态条原样保留。 */
+export function removeSpecsByOrigin(origin) {
+    const ids = [];
+    for (const [id, spec] of _specs) {
+        if ((spec.__origin || '') === origin) ids.push(id);
+    }
+    for (const id of ids) _specs.delete(id);
+    return ids;
 }
 
 // —— 各组件构建函数 ——
