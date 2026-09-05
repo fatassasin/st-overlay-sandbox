@@ -195,9 +195,14 @@ function applyReplyArrow() {
 }
 
 // —— 标签切换 ——
+// 测试面板的图位刷新入口。buildTestPane 只在装配时跑一次，而「切到测试 Tab」和
+// 「渲染到阅读器」都该保证内置图已经填好，所以把 rebuildSlots 暴露出来给这两处调。
+let _refreshTestSlots = null;
+
 function activateTab(name) {
     qAll('.ov-dtab').forEach((b) => b.classList.toggle('ov-on', b.dataset.tab === name));
     qAll('.ov-pane').forEach((p) => p.classList.toggle('ov-on', p.dataset.pane === name));
+    if (name === 'test') _refreshTestSlots?.();
 }
 function openTab(name) { activateTab(name); openDrawer(); }
 
@@ -821,6 +826,7 @@ function buildTestPane() {
         }
     };
     rebuildSlots();
+    _refreshTestSlots = rebuildSlots;   // 供 activateTab('test') 每次切进来时补填
 
     // 中英文切换
     const langSeg = q('#test-lang');
@@ -862,7 +868,12 @@ function buildTestPane() {
         loadTestMessage(ta.value);
     });
 
-    q('#test-render').addEventListener('click', () => { loadTestMessage(ta.value); closeDrawer(); });
+    // 渲染前再补一次：确保「点测试就有图」，不用先去点「填入内置测试图」。
+    q('#test-render').addEventListener('click', () => {
+        if (builtinOk) fillBuiltin(collectSlots(ta.value), true);
+        loadTestMessage(ta.value);
+        closeDrawer();
+    });
     q('#test-reset').addEventListener('click', () => {
         ta.value = curLang === 'cn' ? SAMPLE_STAGE_TEXT_CN : SAMPLE_STAGE_TEXT_EN;
         rebuildSlots();
