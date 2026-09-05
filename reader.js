@@ -8,7 +8,7 @@
 //
 // 性能：不重复格式化历史；只在进入某片段时 messageFormatting 一次。
 
-import { q, getStage, getRoot, getShell } from './overlay.js';
+import { q, getStage, getRoot, getShell, insertIntoComposer } from './overlay.js';
 import { parseStageMessage, isVnStageMessage, splitThinking } from './stage-parser.js';
 import { splitBracketSegments } from './text-coloring.js';
 import { isDuplicateAssistantFloor } from './floor-filter.js';
@@ -809,7 +809,8 @@ function renderItems(items) {
         el.appendChild(ph);
         el.appendChild(cap);
 
-        // hover → reveal；click → 额外信息（caption）；绝不写入输入框。
+        // hover → reveal；click → 展开额外信息，并把 action 文案填进输入框（只填不发，
+        // 用户可以改词或直接删掉）。收起时不填，避免反复点击把同一句话堆进去。
         const disabled = it.clickable === false;
         if (!disabled) {
             el.classList.add('ov-clickable');
@@ -860,6 +861,8 @@ function renderItems(items) {
                     r.hidden = !open;
                     el.classList.toggle('ov-revealed', open);
                 }
+                // insertIntoComposer 是追加式的，所以只在展开这一侧填，收起不填
+                if (open && it.action) insertIntoComposer(it.action);
             });
         } else {
             el.classList.add('ov-item-locked');

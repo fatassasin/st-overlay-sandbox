@@ -25,7 +25,7 @@ VN 正文硬性格式：
 - <say char="角色名" pos="left|right" emo="情绪">「对白。」</say>：一屏对白。
 - <cg img="关键画面描述">插图说明。</cg>：一屏 CG。
 - <item name="道具名" img="道具名" pos="float-right" clickable="true" action="（调查 道具）" reveal="悬停揭示">道具说明（点击展开）。</item>：浮动道具，可进背包。
-- 道具交互：悬停显示 reveal；点击展开额外信息（caption/reveal）。不要再依赖「自动填入输入框」——用户若要行动，会自己发送 action 文案。
+- 道具交互：悬停显示 reveal；点击展开额外信息（caption/reveal），同时把 action 文案填进输入框（只填不发，用户可改可删）。所以 action 要写成能直接发出去的一句话。
 - 道具图片（必填其一）：
   1) 已有素材：item 旁写 <fetch category="item">道具/名</fetch><item/>，或 name/img 直接写素材路径；
   2) 新生图：<pic>prompt=英文或中文道具提示词|w=1024|h=1024</pic><item/>，再 <save category="item">道具/名</save> 入库；
@@ -104,7 +104,7 @@ Stage tags:
 - <say char="Name" pos="left|right" emo="mood">"Dialogue."</say>: one dialogue screen.
 - <cg img="key visual description">Caption.</cg>: one CG screen.
 - <item name="prop" img="prop" pos="float-right" clickable="true" action="(inspect prop)" reveal="hover reveal">Prop text (click for extra).</item>: floating prop, can enter inventory.
-- Item UX: hover shows reveal; click expands extra info. Do NOT rely on auto-filling the composer — the user will type/send the action text themselves if they act.
+- Item UX: hover shows reveal; click expands extra info AND inserts the action text into the composer (inserted, not sent — the user can edit or delete it). Write action as a line that is ready to send as-is.
 - Item image (one of):
   1) library: <fetch category="item">props/name</fetch><item/> or put path in name/img;
   2) generate: <pic>prompt=English or Chinese prop prompt|w=1024|h=1024</pic><item/> then optional <save category="item">props/name</save>;
@@ -199,6 +199,7 @@ export const SAMPLE_STAGE_TEXT_CN = `[OV:VN]
 <overlay>{"op":"add","type":"progressbar","id":"trust","label":"信任","value":20,"max":100}</overlay>
 <item name="黄铜罗盘" pos="float-right" clickable="true" action="（调查 罗盘）" reveal="指针在靠近灯塔时会反向旋转。">指针从不指向北方的罗盘。</item>
 <say char="米拉" pos="right" emo="缓和">"……行吧。跟上，别出声。"</say>
+<item name="浸水的斗篷" pos="float-left" clickable="true" action="（披上 斗篷）" reveal="内衬里缝着一片褪色的海图残角。">她递来一件还在滴水的旧斗篷。</item>
 <sfx src="https://example.com/thunder.ogg" volume="0.8">近海雷声滚过。</sfx>
 <cg img="灯塔在淤青色的夜空里骤然亮起">光束扫过你俩。</cg>
 <narration>有那么一刻，谁都没有动。然后第一阵冰冷的雨点落了下来。</narration>`;
@@ -213,6 +214,7 @@ export const SAMPLE_STAGE_TEXT_EN = `[OV:VN]
 <overlay>{"op":"add","type":"progressbar","id":"trust","label":"Trust","value":20,"max":100}</overlay>
 <item name="brass compass" pos="float-right" clickable="true" action="(inspect compass)" reveal="Near the lighthouse, the needle spins backward.">A compass whose needle ignores north.</item>
 <say char="Mira" pos="right" emo="softening">"...Fine. Keep up, and keep quiet."</say>
+<item name="soaked cloak" pos="float-left" clickable="true" action="(put on the cloak)" reveal="A faded corner of a sea chart is sewn into the lining.">She holds out an old cloak, still dripping.</item>
 <sfx src="https://example.com/thunder.ogg" volume="0.8">Thunder rolls across the water.</sfx>
 <cg img="the lighthouse ignites against a bruised purple sky">The beam sweeps over you both.</cg>
 <narration>For a moment, neither of you moves. Then the first cold drops begin to fall.</narration>`;

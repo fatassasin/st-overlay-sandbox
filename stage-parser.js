@@ -7,8 +7,8 @@
 //     <cg img="...">caption</cg>       全屏插画 → 一片段（点击推进）
 //     <item img="..." name="..." url="..." pos="float-right" clickable="true" action="（翻开 便签）" reveal="揭示">caption</item>
 //       道具浮图，附着当前片段 + 进背包。clickable/action/reveal 由 AI 决定：
-//       clickable="false" → 仅展示；hover 显示 reveal；click 展开额外信息（caption/reveal），不写输入框。
-//       action 仅作协议提示：用户手动把 action 发到输入框后生成。
+//       clickable="false" → 仅展示；hover 显示 reveal；click 展开额外信息（caption/reveal）。
+//       click 展开时把 action 追加进输入框（只填不发）。
 //       图片：url / img 内嵌 <fetch>路径</fetch><item/> 或 <pic>…</pic><item/> / 素材库名。
 //     <overlay>{json}</overlay>        HUD 指令（progressbar/stat/alert），喂左下角状态条
 //   片段粒度（已定）：每个标签 = 一屏。标签之间的裸文字也各自成 narration 片段。
@@ -516,7 +516,7 @@ export function parseStageMessage(mes, opts = {}) {
                 pos: mk.attrs.pos || 'float-right',
                 caption: (mk.inner || '').trim(),
                 clickable,                                  // null=未声明(默认可点), true=可点, false=不可点
-                action: (mk.attrs.action || '').trim() || '',// 协议动作文案（用户手动发送）；不再自动写入输入框
+                action: (mk.attrs.action || '').trim() || '',// 协议动作文案；点击道具时追加进输入框（只填不发）
                 reveal: (mk.attrs.reveal || '').trim() || '',// 悬停显示；点击后与 caption 一并钉住
                 url: resolved.url || '',
             };
