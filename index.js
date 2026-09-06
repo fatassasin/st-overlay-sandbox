@@ -471,7 +471,14 @@ async function dispatchVirtualKey() {
 }
 function registerKeyButton() {
     const btn = ovq('#ov-key-button'); if (!btn || btn.dataset.bound) return;
-    btn.dataset.bound = '1'; makeDraggable(btn, { storageKey: 'st-overlay-key-button-pos', onClick: dispatchVirtualKey, onMove: applyKeyButtonPlacement }); applyKeyButtonState();
+    // 注意：这里【不能】把 applyKeyButtonPlacement 当 onMove 传进去。draggable 的每次
+    // pointermove 都是「先 applyPos 再 onMove」，而未停靠时 applyKeyButtonPlacement 会从
+    // localStorage 读回上次保存的坐标并覆写 style.left/top——等于每移动一像素就被拽回原位；
+    // 而坐标只在 pointerup 时才写入，所以按钮永远拖不动。停靠状态在拖动过程中也不会变，
+    // 拖到一半重算摆放本就没有意义。
+    btn.dataset.bound = '1';
+    makeDraggable(btn, { storageKey: 'st-overlay-key-button-pos', onClick: dispatchVirtualKey });
+    applyKeyButtonState();
 }
 /** 注册入口按钮：默认钉右上角，可自由拖动（draggable.js），位置存 localStorage，点击=开关 */
 function registerLaunchButton() {
