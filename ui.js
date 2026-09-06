@@ -759,10 +759,11 @@ function buildTestPane() {
     };
 
     // 内置测试图的自动填充状态。
-    // builtinOk：test-assets/ 是否真的在（HEAD 探测的结果，null = 还没探完）。
+    // builtinOk：test-assets/ 是否真的在。默认 true（乐观），下面的图片探测失败才翻成 false。
+    //   起点必须是 true，否则首次 rebuildSlots() 赶在探测回来之前跑完，一张图都不会填。
     // suppressed：用户显式清掉过的图位，自动填充不再碰它们——否则「清除」按下去，
     //   下一次重建（改文本、切语言）又给填回来，等于按钮没用。
-    let builtinOk = null;
+    let builtinOk = true;
     const suppressed = new Set();
 
     /** 按 role 分池顺序发图。onlyEmpty=true 时只补空位，不覆盖用户自己传的图。
@@ -849,16 +850,19 @@ function buildTestPane() {
         loadTestMessage(ta.value);
     });
     // test-assets/ 随仓库附带，但别人可能把它删了（这批图是 AI 生成的占位素材，不是必需品）。
-    // 缺文件时按钮点了只会填出一堆 404，不如直接藏掉——探一张即可，六张要么都在要么都不在。
-    // 探测是异步的，首次 rebuildSlots() 跑完它才回来，所以成功后要再重建一次补上自动填充。
-    fetch(builtinTestUrl(BUILTIN_TEST_IMAGES.bg[0]), { method: 'HEAD' })
-        .then((r) => r.ok)
-        .catch(() => false)
-        .then((ok) => {
-            builtinOk = ok;
-            if (!ok) q('#test-fill-builtin')?.remove();
-            else rebuildSlots();
-        });
+    // 缺文件时按钮点了只会填出一堆 404，所以探一张确认——六张要么都在要么都不在。
+    //
+    // 探测必须「先填了再说」：builtinOk 若从 false 起步，首次 rebuildSlots() 就不填，
+    // 而不少静态服务器对 HEAD 直接回 405/404（只认 GET），于是探测永远失败——
+    // 结果是图一张都不填、按钮还被悄悄删掉，界面上只剩道具的那行说明文字。
+    // 所以默认放行，并且改用真正的图片加载来探：能不能 <img>/background-image 出来
+    // 才是这里唯一关心的事，服务器认不认 HEAD 无关紧要。
+    const probe = new Image();
+    probe.onerror = () => {
+        builtinOk = false;
+        q('#test-fill-builtin')?.remove();
+    };
+    probe.src = builtinTestUrl(BUILTIN_TEST_IMAGES.bg[0]);
     q('#test-clear-imgs').addEventListener('click', () => {
         for (const slot of collectSlots(ta.value)) {
             suppressed.add(slot.key);                   // 否则 rebuildSlots 立刻又填回来
