@@ -100,7 +100,7 @@ enableServerPlugins: true
 | `<scene bg= fade=/>` | 切换背景，可指定淡入时长 |
 | `<narration>` | 旁白段落 |
 | `<say char= pos= emo=>` | 角色台词；`pos` 定左右立绘位，`emo` 定表情图 |
-| `<cg img=>` | 全屏 CG；`img` 作标题显示在正文上方，标签内文字作正文 |
+| `<cg img=>` | 全屏 CG；`img` 作标题显示在说话人位置（与 `<say>` 的角色名同一处、同字形），标签内文字作正文 |
 | `<item img= pos= clickable= action= reveal=>` | 道具浮层，可点击、可回填动作文本 |
 | `<bgm>` `<sfx>` `<voice>` | 背景音乐 / 音效 / 语音 |
 | `<think>` | 思维链，收进顶部横条，不混进正文 |

@@ -303,16 +303,6 @@
 #st-overlay-root .ov-panel-text em { color: var(--ov-italic); font-style: normal; }
 #st-overlay-root .ov-panel-text q { color: var(--ov-quote); }
 #st-overlay-root .ov-panel-text .ov-bracket { color: var(--ov-bracket); }
-/* <cg img="标题">正文</cg> 的标题行，正文接在其下。是个 <p>，
-   所以上面那条「文本背景」选择器（.ov-panel-text > p）已经覆盖到它，这里只管字形。 */
-#st-overlay-root .ov-panel-text .ov-cg-title {
-    margin: 0 0 0.5em;
-    font-size: 1.15em;
-    font-weight: 600;
-    letter-spacing: 1px;
-    line-height: 1.55;
-    color: var(--ov-emphasis);
-}
 /* 原文已自带引号（「」/"" 等），不再由 q 伪元素叠加引号，避免双重引号 */
 #st-overlay-root .ov-panel-text q::before, #st-overlay-root .ov-panel-text q::after { content: none; }
 #st-overlay-root .ov-panel-text pre, #st-overlay-root .ov-panel-text img,
