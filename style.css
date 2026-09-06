@@ -1210,13 +1210,6 @@
     animation: ov-reveal-in 0.25s ease;
     white-space: pre-wrap;
 }
-#st-overlay-root .ov-item-extra {
-    margin-top: 6px; padding: 8px 10px; border-radius: 8px;
-    background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12);
-    color: #eef1f6; font-size: 12px; line-height: 1.55;
-    animation: ov-reveal-in 0.25s ease;
-    white-space: pre-wrap;
-}
 #st-overlay-root .ov-item-float.ov-item-open { z-index: 6; }
 #st-overlay-root .ov-bag-reveal {
     margin-top: 4px; padding: 6px 8px; border-radius: 8px;

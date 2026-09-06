@@ -790,13 +790,13 @@ function renderItems(items) {
     box.innerHTML = '';
     for (const it of items) {
         const el = document.createElement('div');
-        el.className = 'ov-item-float ov-placeholder';
+        el.className = 'ov-item-float';
         el.dataset.pos = it.pos || 'float-right';
         const cap = document.createElement('div');
         cap.className = 'ov-item-cap';
         cap.textContent = it.caption || it.img || '';
         const ph = document.createElement('div');
-        ph.className = 'ov-item-ph';
+        ph.className = 'ov-item-ph ov-placeholder';
         // 道具图：显式 url（fetch/pic）优先；否则 resolveImage/素材库；否则占位名。
         const img = it.url ? { url: it.url } : resolveImage('item', { img: it.img, caption: it.caption });
         if (img && img.url) {
@@ -809,7 +809,7 @@ function renderItems(items) {
         el.appendChild(ph);
         el.appendChild(cap);
 
-        // hover → reveal；click → 展开额外信息，并把 action 文案填进输入框（只填不发，
+        // hover → reveal；click → 钉住 reveal，并把 action 文案填进输入框（只填不发，
         // 用户可以改词或直接删掉）。收起时不填，避免反复点击把同一句话堆进去。
         const disabled = it.clickable === false;
         if (!disabled) {
@@ -822,15 +822,6 @@ function renderItems(items) {
                     el.appendChild(r);
                 }
                 return r;
-            };
-            const ensureExtra = () => {
-                let x = el.querySelector('.ov-item-extra');
-                if (!x) {
-                    x = document.createElement('div');
-                    x.className = 'ov-item-extra';
-                    el.appendChild(x);
-                }
-                return x;
             };
             el.addEventListener('mouseenter', () => {
                 if (!it.reveal || el.classList.contains('ov-item-open')) return;
@@ -849,14 +840,10 @@ function renderItems(items) {
                 ev.stopPropagation();
                 finishTypewriterInstantly();
                 const open = el.classList.toggle('ov-item-open');
-                const extra = ensureExtra();
-                const body = [it.caption, it.reveal].filter(Boolean).join('\n\n')
-                    || it.img || '（无额外信息）';
-                extra.textContent = body;
-                extra.hidden = !open;
+                // 只钉住 reveal。caption 已经常驻在 .ov-item-cap 上，再展开一遍就是把
+                // 用户已经看着的那句话重复一次；reveal 才是「点了才该看到」的内容。
                 if (it.reveal) {
                     const r = ensureReveal();
-                    // 展开额外信息时一并钉住 reveal；收起则隐藏
                     r.textContent = it.reveal;
                     r.hidden = !open;
                     el.classList.toggle('ov-revealed', open);
