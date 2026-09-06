@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS = {
     idleDim: true,          // 无操作自动黑屏（鼠标/键盘静止到时长后 3s 渐黑，动一下瞬间还原）
     idleDimDelay: 600,      // 无操作多少秒后开始渐黑
     bottomFade: 11,         // 底部黑框高度（vh 单位）：0=完全无黑框；>0 控制正文面板离底部多远 + 虚化遮罩高度
-    topTextHeight: 76,      // 顶部文本高度 px：正文第一行从屏幕顶部向下的偏移（框定文字起始位置）→ --ov-text-top
+    topTextHeight: 100,     // 顶部文本高度 px：正文第一行从屏幕顶部向下的偏移（框定文字起始位置）→ --ov-text-top
     vnTextHeight: 32,       // 视觉小说正文显示区高度（vh 占屏）→ --ov-panel-maxh（固定高度、内部滚动）
     plainTextMaxHeight: 16, // 兼容旧 key：底部文本高度（vh），0=无额外底部留白 → --ov-plain-bottom-gap
     pointerNavigation: true, // 左右键导航开关：开=保持当前切楼/切片；关=左右键不导航
