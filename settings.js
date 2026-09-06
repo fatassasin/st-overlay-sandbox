@@ -82,7 +82,9 @@ export const DEFAULT_SETTINGS = {
     idleDim: true,          // 无操作自动黑屏（鼠标/键盘静止到时长后 3s 渐黑，动一下瞬间还原）
     idleDimDelay: 600,      // 无操作多少秒后开始渐黑
     bottomFade: 11,         // 底部黑框高度（vh 单位）：0=完全无黑框；>0 控制正文面板离底部多远 + 虚化遮罩高度
-    panelPlate: 69,         // 面板底色浓度 0..100：正文面板与输入框的衬底/描边/投影强度（乘在「灯光」预设上）
+    panelPlate: 80,         // 面板底色浓度 0..100：正文面板与输入框的衬底/描边/投影强度（乘在「灯光」预设上）
+    // 出厂 80 就是旧刻度的满格（80 × 1.25 = 1.0 倍灯光预设），滑到 100 比旧上限再浓 25%。
+    panelPlateScale: 2,     // panelPlate 的刻度版本；见 loadSettings() 的重标定迁移，不在面板里露出
     topTextHeight: 100,     // 顶部文本高度 px：正文第一行从屏幕顶部向下的偏移（框定文字起始位置）→ --ov-text-top
     vnTextHeight: 32,       // 视觉小说正文显示区高度（vh 占屏）→ --ov-panel-maxh（固定高度、内部滚动）
     plainTextMaxHeight: 16, // 兼容旧 key：底部文本高度（vh），0=无额外底部留白 → --ov-plain-bottom-gap
@@ -158,6 +160,15 @@ export function loadSettings() {
     if (store.panelPlate === undefined && store.bottomFade !== undefined) {
         const oldFade = Math.max(0, Number(store.bottomFade) || 0);
         store.panelPlate = Math.round(Math.min(1, oldFade / 16) * 100);
+        migrated = true;
+    }
+    // 刻度 v2：滑条上限比原来多 25%（100 现在等于旧刻度的 125）。已存的值是旧刻度，
+    // 数值区间又完全重合，光看数字分不出新旧，所以用 panelPlateScale 当版本标记。
+    // 乘 0.8 换算回同一个 plateK，升级后观感逐像素不变；只有出厂默认从「旧满格」起步。
+    if (store.panelPlate !== undefined && store.panelPlateScale !== 2) {
+        const oldPlate = Math.max(0, Math.min(100, Number(store.panelPlate) || 0));
+        store.panelPlate = Math.round(oldPlate * 0.8);
+        store.panelPlateScale = 2;
         migrated = true;
     }
     for (const key of Object.keys(DEFAULT_SETTINGS)) {

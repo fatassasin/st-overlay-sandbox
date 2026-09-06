@@ -117,7 +117,8 @@ export function applyCurrentSettings() {
     // 面板与输入框的衬底浓度走自己的 panelPlate，不再乘 bottomFade/16——「底部黑框高度」只管
     // 几何与虚化。以前两者绑死，出厂 bottomFade=0 的新装等于把整块面板画成全透明，
     // 而调过这个滑条的老配置有边框，同一份代码在两台机器上长得不一样，且没人找得到开关。
-    const plateK = Math.max(0, Math.min(100, Number(s.panelPlate) || 0)) / 100;
+    // 滑条 0..100 映射到 0..1.25 倍灯光预设：80 = 旧刻度满格（出厂默认），100 比旧上限再浓 25%。
+    const plateK = Math.max(0, Math.min(100, Number(s.panelPlate) || 0)) * 0.0125;
     root.style.setProperty('--ov-panel-bg-live', String(lt.panelBg * plateK));
     root.style.setProperty('--ov-panel-bg-live-soft', String(lt.panelBg * 0.85 * plateK));
     root.style.setProperty('--ov-panel-shadow-live', String(0.5 * plateK));
@@ -244,8 +245,7 @@ function buildSettingsPane() {
         <details class="ov-collapse" open>
             <summary class="ov-collapse-head"><span class="ov-collapse-caret">▾</span>正文</summary>
             <div class="ov-collapse-body">
-                <label class="ov-field checkbox"><input type="checkbox" id="set-autoshow" /><span>新回复首次识别 VN / 舞台标签时自动打开（每轮仅一次）</span></label>
-                <div class="ov-hint">关 = 只点入口按钮或 Ctrl/Cmd+Shift+O。开 = 本轮生成里第一次看到 VN/舞台标签弹一次，关掉后本轮不再弹。</div>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-autoshow" /><span title="关=只用入口按钮或 Ctrl/Cmd+Shift+O 打开；开=每轮首次出现 VN/舞台标签时自动弹一次。">新回复首次识别 VN / 舞台标签时自动打开（每轮仅一次）</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-renderhtml" /><span>渲染 HTML（关则纯文本）</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-typewriter" /><span>打字机逐字呈现</span></label>
                 <label class="ov-field"><span>打字速度·正文</span><input type="range" id="set-twspeed" min="1" max="150" step="1" /><span class="ov-hint-inline" id="set-twspeed-v"></span></label>
@@ -274,8 +274,7 @@ function buildSettingsPane() {
                 <div class="ov-field ov-semantic-row"><span>引号（中英文）</span><span class="ov-semantic-controls"><input type="color" id="set-quotecolor" class="ov-color ov-semantic-color" /><label class="ov-follow-option"><input type="checkbox" id="set-follow-quotecolor" /><span>跟随 ST</span></label></span></div>
                 <div class="ov-field ov-semantic-row"><span>括号</span><span class="ov-semantic-controls"><input type="color" id="set-bracketcolor" class="ov-color ov-semantic-color" /><label class="ov-follow-option"><input type="checkbox" id="set-follow-bracketcolor" /><span>跟随 ST</span></label></span></div>
                 <div class="ov-field ov-semantic-row"><span>斜体</span><span class="ov-semantic-controls"><input type="color" id="set-italiccolor" class="ov-color ov-semantic-color" /><label class="ov-follow-option"><input type="checkbox" id="set-follow-italiccolor" /><span>跟随 ST</span></label></span></div>
-                <div class="ov-field ov-semantic-row"><span>我的输入回显</span><span class="ov-semantic-controls"><input type="color" id="set-replycolor" class="ov-color ov-semantic-color" /><label class="ov-follow-option"><input type="checkbox" id="set-follow-replycolor" /><span>跟随 ST</span></label></span></div>
-                <div class="ov-hint">顶部悬停显示的那条用户输入。默认跟随 ST 的正文配色（与上面「正文」同一个变量）。</div>
+                <div class="ov-field ov-semantic-row"><span title="顶部悬停显示的那条用户输入；默认跟随 ST 正文色。">我的输入回显</span><span class="ov-semantic-controls"><input type="color" id="set-replycolor" class="ov-color ov-semantic-color" /><label class="ov-follow-option"><input type="checkbox" id="set-follow-replycolor" /><span>跟随 ST</span></label></span></div>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-textbgenabled" /><span>文本背景（仅有生成背景图时显示）</span></label>
                 <label class="ov-field"><span>文本背景色</span><input type="color" id="set-textbgcolor" class="ov-color" /><button class="ov-btn ghost" id="set-textbgcolor-reset" type="button">默认</button></label>
                 <label class="ov-field"><span>文本背景透明度</span><input type="range" id="set-textbgopacity" min="0" max="90" step="1" /></label>
@@ -283,19 +282,17 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>正文对比度</span><input type="range" id="set-textcontrast" min="50" max="180" step="2" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-thinkingline" /><span>思维链顶部横条</span></label>
                 <div class="ov-seg" id="set-lighting"><button type="button" data-v="off">无</button><button type="button" data-v="dim">暗角</button><button type="button" data-v="glow">辉光</button></div>
-                <label class="ov-field"><span>面板底色</span><input type="range" id="set-panelplate" min="0" max="100" step="1" /></label>
-                <div class="ov-hint">正文面板与输入框的衬底浓度，含描边和投影。0=面板完全隐形，文字直接浮在背景图上。最终深浅还会乘上「灯光」档位（无/暗角/辉光）。</div>
+                <label class="ov-field"><span title="正文面板与输入框的衬底浓度，含描边和投影；0=面板隐形。还会乘上「灯光」档位。">面板底色</span><input type="range" id="set-panelplate" min="0" max="100" step="1" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-backgroundglow-enabled" /><span>背景泛光</span></label>
                 <label class="ov-field"><span>泛光亮度</span><input type="range" id="set-backgroundglow-brightness" min="0" max="200" step="5" /></label>
             </div>
         </details>
         <details class="ov-collapse">
-            <summary class="ov-collapse-head"><span class="ov-collapse-caret">▾</span>导航与界面</summary>
+            <summary class="ov-collapse-head" title="Ctrl/Cmd+Shift+O 开关 · 勾选左右键导航后：左键下一屏、右键上一屏 · 滚轮跨楼层"><span class="ov-collapse-caret">▾</span>导航与界面</summary>
             <div class="ov-collapse-body">
                 <label class="ov-field checkbox"><input type="checkbox" id="set-showfloormeta" /><span>显示楼层号（左上角）</span></label>
                 <label class="ov-field"><span>滚轮换楼力度</span><input type="range" id="set-wheelstrength" min="200" max="1400" step="20" /></label>
-                <label class="ov-field checkbox"><input type="checkbox" id="set-pointernavigation" /><span>左右键切换楼层</span></label>
-                <div class="ov-hint">勾选：保持当前左右键导航。取消：左右键不切换楼层；拖动选择、右键复制、滚轮和楼层按钮不受影响。</div>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-pointernavigation" /><span title="取消后左右键不再切楼层；拖动选择、右键复制、滚轮和楼层按钮不受影响。">左右键切换楼层</span></label>
                 <label class="ov-field"><span>底部黑框高度</span><input type="range" id="set-bottomfade" min="0" max="40" step="1" /></label>
                 <label class="ov-field"><span>顶部文本高度</span><input type="range" id="set-toptextheight" min="0" max="200" step="4" /></label>
                 <label class="ov-field"><span>底部文本高度</span><input type="range" id="set-plaintextmaxheight" min="0" max="70" step="1" /></label>
@@ -306,8 +303,7 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>提示箭头大小</span><input type="range" id="set-arrowsize" min="14" max="72" step="2" /></label>
                 <label class="ov-field"><span>提示箭头形状高度</span><input type="range" id="set-arrowheight" min="4" max="40" step="1" /></label>
                 <label class="ov-field"><span>提示箭头位置高度</span><input type="range" id="set-arrowbottom" min="0" max="180" step="2" /></label>
-                <label class="ov-field checkbox"><input type="checkbox" id="set-replyautohide" /><span>我的输入回显自动隐藏（悬停顶部显示）</span></label>
-                <div class="ov-hint">鼠标移到画面顶部，从上方滑入一条只读胶囊，显示「是哪条输入得到了这一楼」。本楼之前没有用户消息时（开局第一楼等）整套不出现。</div>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-replyautohide" /><span title="鼠标移到画面顶部滑入一条只读胶囊，显示得到这一楼的那句输入；本楼之前没有用户消息时不出现。">我的输入回显自动隐藏（悬停顶部显示）</span></label>
                 <label class="ov-field"><span>回显唤起热区</span><input type="range" id="set-replyhotzone" min="8" max="160" step="4" /></label>
                 <label class="ov-field"><span>回显位置高度</span><input type="range" id="set-replytop" min="0" max="180" step="2" /></label>
                 <label class="ov-field"><span>回显最大高度</span><input type="range" id="set-replymaxheight" min="10" max="70" step="1" /></label>
@@ -318,17 +314,15 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>顶部箭头位置高度</span><input type="range" id="set-replyarrowtop" min="0" max="180" step="2" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-topbarautohide" /><span>右上角图标折叠（悬停展开）</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-jumpbarautohide" /><span>右侧楼层按钮自动隐藏（悬停右侧显示）</span></label>
-                <label class="ov-field"><span>楼层条左右位置</span><input type="range" id="set-jumpbarinset" min="0" max="160" step="1" /></label>
-                <div class="ov-hint">数值越大越靠左（距右边缘更远）。默认 14px。</div>
+                <label class="ov-field"><span title="数值越大越靠左（距右边缘更远）；默认 14px。">楼层条左右位置</span><input type="range" id="set-jumpbarinset" min="0" max="160" step="1" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-idledim" /><span>无操作自动黑屏</span></label>
-                <label class="ov-field"><span>静止多久变黑</span><input type="range" id="set-idledimdelay" min="5" max="10800" step="5" /><span class="ov-hint-inline" id="set-idledimdelay-v"></span></label>
-                <div class="ov-hint">鼠标和键盘都不动到这个秒数后，画面用 3 秒渐渐变黑；动一下鼠标或按任意键立刻还原。</div>
+                <label class="ov-field"><span title="鼠标和键盘静止到这个秒数后用 3 秒渐黑；动一下立刻还原。">静止多久变黑</span><input type="range" id="set-idledimdelay" min="5" max="10800" step="5" /><span class="ov-hint-inline" id="set-idledimdelay-v"></span></label>
             </div>
         </details>
         <details class="ov-collapse" open>
             <summary class="ov-collapse-head"><span class="ov-collapse-caret">▾</span>移动按键</summary>
             <div class="ov-collapse-body">
-                <label class="ov-field checkbox"><input type="checkbox" id="set-keybutton-enabled" /><span>显示可移动虚拟按键</span></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-keybutton-enabled" /><span title="按键可拖动；点击后由 Windows 发送真实系统按键。">显示可移动虚拟按键</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-keybutton-docked" /><span>固定在发送键左侧（无边框）</span></label>
                 <label class="ov-field"><span>麦克风键位（mic）</span>
                     <select id="set-keybutton-code" class="ov-select">
@@ -340,7 +334,6 @@ function buildSettingsPane() {
                     </select></label>
                 <div class="ov-row"><button class="ov-btn ghost" id="set-keybutton-capture" type="button">录入键位</button></div>
                 <div class="ov-hint" id="set-keybutton-status" data-state="pending">系统桥接：检测中…</div>
-                <div class="ov-hint">按键可拖动；点击后由 Windows 发送真实系统按键。</div>
             </div>
         </details>
         <details class="ov-collapse">
@@ -352,9 +345,8 @@ function buildSettingsPane() {
         <details class="ov-collapse">
             <summary class="ov-collapse-head"><span class="ov-collapse-caret">▾</span>音频</summary>
             <div class="ov-collapse-body">
-                <label class="ov-field checkbox"><input type="checkbox" id="set-audioenabled" /><span>启用音频（bgm/sfx/voice）</span></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-audioenabled" /><span title="AI 回复里夹 &lt;bgm&gt;/&lt;sfx&gt;/&lt;voice&gt; 标签时播放；切片段触发 sfx/voice，bgm 持续。">启用音频（bgm/sfx/voice）</span></label>
                 <label class="ov-field"><span>音频音量</span><input type="range" id="set-audiovolume" min="0" max="100" step="1" /></label>
-                <div class="ov-hint">AI 在回复里夹 &lt;bgm&gt;/&lt;sfx&gt;/&lt;voice&gt; 标签时播放；切片段触发 sfx/voice，bgm 持续。</div>
             </div>
         </details>
         <details class="ov-collapse">
@@ -368,21 +360,18 @@ function buildSettingsPane() {
                         <option value="system">system</option><option value="user">user</option><option value="assistant">assistant</option>
                     </select></label>
                 <label class="ov-field"><span>自定义宏名</span><input class="ov-text" id="set-injectmacro" placeholder="{{sandbox_prompt}}" /></label>
-                <label class="ov-field"><span>素材路径宏</span><input class="ov-text" id="set-materialmacro" placeholder="{{material}}" /></label>
-                <div class="ov-hint">{{material}} = 可见素材路径（文件夹/名 + category:xx）。眼睛关则不进目录。</div>
+                <label class="ov-field"><span title="{{material}} = 可见素材路径（文件夹/名 + category:xx）；眼睛关则不进目录。">素材路径宏</span><input class="ov-text" id="set-materialmacro" placeholder="{{material}}" /></label>
                 <label class="ov-field"><span>内置提示词语言</span>
                     <select id="set-protocollang" class="ov-select">
                         <option value="cn">中文</option><option value="en">English</option>
                     </select></label>
-                <div class="ov-hint">编辑下方提示词可完全自定义教给 AI 的协议。默认显示内置协议，可直接编辑后点「保存协议」覆盖；「恢复内置」回到内置并清空自定义。</div>
-                <textarea class="ov-code" id="set-protocol" spellcheck="false" placeholder="（空 = 使用内置协议）"></textarea>
+                <textarea class="ov-code" id="set-protocol" spellcheck="false" title="教给 AI 的舞台协议；留空=使用内置协议，编辑后点「保存协议」覆盖。" placeholder="（空 = 使用内置协议）"></textarea>
                 <div class="ov-row">
-                    <button class="ov-btn" id="set-protocol-save" type="button">保存协议</button>
-                    <button class="ov-btn ghost" id="set-protocol-reset" type="button">恢复内置</button>
+                    <button class="ov-btn" id="set-protocol-save" type="button" title="把上面的文本存为自定义协议，覆盖内置。">保存协议</button>
+                    <button class="ov-btn ghost" id="set-protocol-reset" type="button" title="回到内置协议并清空自定义文本。">恢复内置</button>
                     <button class="ov-btn ghost" id="set-protocol-copy" type="button">复制</button>
                     <button class="ov-btn ghost" id="set-protocol-fullscreen" type="button" title="让 textarea 铺满整个抽屉方便编辑"><i class="fa-solid fa-maximize"></i> 全屏</button>
                 </div>
-                <div class="ov-hint">Ctrl/Cmd+Shift+O 开关 · 勾选左右键导航后：左键下一屏、右键上一屏 · 滚轮跨楼层</div>
             </div>
         </details>
     `;
@@ -743,9 +732,8 @@ function buildTestPane() {
     if (!mount) return;
     mount.innerHTML = `
         <div class="ov-set-group">
-            <div class="ov-set-title">测试文本（中英双版，覆盖几乎所有标签）</div>
+            <div class="ov-set-title" title="编辑后点「渲染到阅读器」会作为合成楼层预览，不影响真实聊天。">测试文本（中英双版，覆盖几乎所有标签）</div>
             <div class="ov-seg" id="test-lang"><button type="button" data-v="cn">中文</button><button type="button" data-v="en">EN</button></div>
-            <div class="ov-hint">编辑后点「渲染到阅读器」会作为合成楼层预览（不影响真实聊天）。</div>
             <textarea class="ov-code ov-code-tall" id="test-text" spellcheck="false"></textarea>
             <div class="ov-row">
                 <button class="ov-btn" id="test-render" type="button">渲染到阅读器</button>
@@ -753,8 +741,7 @@ function buildTestPane() {
             </div>
         </div>
         <div class="ov-set-group">
-            <div class="ov-set-title">注入测试图（每个图位独立上传）</div>
-            <div class="ov-hint">下面每一项对应文本里的一个具体图位（背景／每个角色／每张CG／每个道具）。上传后点「渲染到阅读器」在对应位置预览；切回真实聊天自动清除。推荐分辨率见每项提示。</div>
+            <div class="ov-set-title" title="每一项对应文本里的一个具体图位（背景／角色／CG／道具）。上传后点「渲染到阅读器」预览；切回真实聊天自动清除。">注入测试图（每个图位独立上传）</div>
             <div class="ov-row">
                 <button class="ov-btn ghost" id="test-fill-builtin" type="button">填入内置测试图</button>
                 <button class="ov-btn ghost" id="test-clear-imgs" type="button">清空全部</button>
@@ -932,17 +919,16 @@ function buildAssetsPane() {
             <input class="ov-asset-folder-new ov-text" id="asset-folder-new" placeholder="输入文件夹名，Enter 创建" hidden />
             <div class="ov-asset-editor" id="asset-editor" hidden>
                 <label class="ov-field"><span>名称</span><input class="ov-text" id="asset-name" placeholder="如：米拉 · 缓和" /></label>
-                <label class="ov-field"><span>路径</span><input class="ov-text" id="asset-path" placeholder="如：角色/米拉" /></label>
+                <label class="ov-field"><span title="可作为分类/母路径。">路径</span><input class="ov-text" id="asset-path" placeholder="如：角色/米拉" /></label>
                 <label class="ov-field"><span>类型 category</span><select class="ov-select" id="asset-category"><option value="">（无）</option><option value="bg">bg 背景</option><option value="char">char 角色</option><option value="cg">cg 插图</option><option value="item">item 道具</option><option value="sprite">sprite</option><option value="other">other</option></select></label>
                 <label class="ov-field"><span>标签</span><input class="ov-text" id="asset-tag" placeholder="可选备注" /></label>
-                <label class="ov-field"><span>URL</span><input class="ov-text" id="asset-url" placeholder="图片 URL 或留空走上传" /></label>
+                <label class="ov-field"><span title="大图建议用 URL；上传文件会存为 dataURL。">URL</span><input class="ov-text" id="asset-url" placeholder="图片 URL 或留空走上传" /></label>
                 <div class="ov-row">
                     <button class="ov-btn" id="asset-add" type="button">添加 URL</button>
                     <label class="ov-btn ghost" for="asset-file" style="cursor:pointer;">上传文件</label>
                     <button class="ov-btn ghost" id="asset-cancel" type="button">取消</button>
                     <input type="file" id="asset-file" accept="image/*" hidden />
                 </div>
-                <div class="ov-hint">路径可作为分类/母路径；大图建议用 URL，上传文件会存为 dataURL。</div>
             </div>
             <div class="ov-asset-io" id="asset-io" hidden>
                 <button class="ov-btn" id="asset-export" type="button">导出 JSON</button>

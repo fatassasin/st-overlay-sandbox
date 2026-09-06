@@ -1026,6 +1026,11 @@
 #st-overlay-root .ov-field { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 4px 0; }
 #st-overlay-root .ov-field.checkbox { cursor: pointer; }
 #st-overlay-root .ov-field > span:first-child { flex: 1; }
+/* 带 title 的标题=有悬停说明。虚线只画在字形上（不是 border-bottom）——标题是 flex:1，
+   边框会横穿整行。summary 里还套着 caret，只给光标提示，不画线。 */
+#st-overlay-root .ov-field > span[title],
+#st-overlay-root .ov-set-title[title] { cursor: help; text-decoration: underline dotted var(--ov-muted); text-underline-offset: 3px; }
+#st-overlay-root .ov-collapse-head[title] { cursor: help; }
 #st-overlay-root .ov-field input[type="range"] { flex: 1.4; accent-color: var(--ov-accent); }
 #st-overlay-root .ov-select {
     background: rgba(0,0,0,0.4); color: #eef1f6; border: 1px solid var(--ov-stroke);
