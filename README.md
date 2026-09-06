@@ -106,21 +106,6 @@ enableServerPlugins: true
 | `<think>` | 思维链，收进顶部横条，不混进正文 |
 | `<overlay>{JSON}</overlay>` | 素材库增删等结构化指令 |
 
-### 分支选项按钮（`<opt>` 之类）不是本插件的标签
-
-上表之外的标签本插件一概不解析。**分支选项按钮走的是另一条路**：回复里的 HTML——不管来自你自己装的酒馆 regex 脚本（例如把 `<opt>` 替换成按钮的那种），还是标了 `html` 的代码围栏——会被放进一个沙盒 iframe 内联渲染在正文下方。
-
-按钮要能点，靠的是 `data-action` 属性：
-
-```html
-<button data-action="往左走">往左走</button>              <!-- 直接发送并触发回复 -->
-<button class="action-btn-copy" data-action="往左走">往左走</button>  <!-- 只填进输入框，不发送 -->
-```
-
-所以想要 `<opt>` 这类写法，得自己在酒馆里配一条 regex 脚本把它转成上面这样的 HTML；插件负责的是渲染和把点击桥接回输入框。
-
-> 点击由 iframe **内部**的脚本处理，父页面无法把点击补发进去。所以插件里所有贴在画面边缘的唤起热区都是 `pointer-events: none`、改用几何判定（见 `index.js` 的 mousemove）。往底部加任何 `pointer-events: auto` 的图层都会让盖住的选项永久点不动。
-
 ### 图片从哪来
 
 **插件本身不生成图片，也没有内置图库。**舞台上的背景、CG、立绘、道具图，全部要靠**明确的 URL 地址**填进去——插件只负责把那个地址贴到对应的图层上。所以想让画面真的有图，得配一套出图的东西：SillyTavern 的 Image Generation 扩展，或者你自己在本地跑的 ComfyUI / A1111 之类。

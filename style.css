@@ -158,9 +158,11 @@
     font-size: 12px; letter-spacing: 1px; color: rgba(255,255,255,0.3);
 }
 
-/* 全屏 CG 层：优先完整显示，不裁切 */
+/* 全屏 CG 层：优先完整显示，不裁切。
+   z-index 必须低于 .ov-panel(5)——这一层是 inset:0 且 background-color 不透明的，
+   排在面板之上就会把 <cg> 的标题和正文整个盖掉，只剩一张图。 */
 #st-overlay-root .ov-cg {
-    z-index: 6; pointer-events: auto;
+    z-index: 4; pointer-events: auto;
     background-size: contain; background-position: center; background-repeat: no-repeat;
     background-color: #040405;
     opacity: 0; transition: opacity 0.5s ease;
