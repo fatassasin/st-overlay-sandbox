@@ -82,6 +82,7 @@ export const DEFAULT_SETTINGS = {
     idleDim: true,          // 无操作自动黑屏（鼠标/键盘静止到时长后 3s 渐黑，动一下瞬间还原）
     idleDimDelay: 600,      // 无操作多少秒后开始渐黑
     bottomFade: 11,         // 底部黑框高度（vh 单位）：0=完全无黑框；>0 控制正文面板离底部多远 + 虚化遮罩高度
+    panelPlate: 69,         // 面板底色浓度 0..100：正文面板与输入框的衬底/描边/投影强度（乘在「灯光」预设上）
     topTextHeight: 100,     // 顶部文本高度 px：正文第一行从屏幕顶部向下的偏移（框定文字起始位置）→ --ov-text-top
     vnTextHeight: 32,       // 视觉小说正文显示区高度（vh 占屏）→ --ov-panel-maxh（固定高度、内部滚动）
     plainTextMaxHeight: 16, // 兼容旧 key：底部文本高度（vh），0=无额外底部留白 → --ov-plain-bottom-gap
@@ -149,6 +150,15 @@ export function loadSettings() {
                 migrated = true;
             }
         }
+    }
+    // 面板底色曾经寄生在 bottomFade 上：fadeK = bottomFade/16 同时缩放面板衬底、描边、投影和输入框底，
+    // 于是一个叫「底部黑框高度」的 vh 滑条在背地里决定面板有没有边框——名字不提，分组也不在配色里，
+    // 谁都找不到。新装（bottomFade 出厂 0）因此整块面板都不画，老配置却有，两台机器长得不一样。
+    // 现在拆成独立的 panelPlate；老配置按当年的 fadeK 折算，升级后观感逐像素不变。
+    if (store.panelPlate === undefined && store.bottomFade !== undefined) {
+        const oldFade = Math.max(0, Number(store.bottomFade) || 0);
+        store.panelPlate = Math.round(Math.min(1, oldFade / 16) * 100);
+        migrated = true;
     }
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
         if (store[key] === undefined) {

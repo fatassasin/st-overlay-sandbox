@@ -112,15 +112,19 @@ export function applyCurrentSettings() {
     root.style.setProperty('--ov-window-glow', String(glowEnabled ? 0.5 : 0));
     root.style.setProperty('--ov-placeholder-glow', String(glowEnabled ? 0.6 : 0));
     const bf = Math.max(0, Number(s.bottomFade) || 0);
-    const fadeK = Math.min(1, bf / 16);
     root.style.setProperty('--ov-bottom-fade', `${bf}vh`);
     root.style.setProperty('--ov-panel-bottom', `${bf}vh`);
-    root.style.setProperty('--ov-panel-bg-live', String(lt.panelBg * fadeK));
-    root.style.setProperty('--ov-panel-bg-live-soft', String(lt.panelBg * 0.85 * fadeK));
-    root.style.setProperty('--ov-panel-shadow-live', String(0.5 * fadeK));
-    root.style.setProperty('--ov-panel-stroke-live', `rgba(255,255,255,${0.055 * fadeK})`);
-    root.style.setProperty('--ov-composer-bg', String(0.55 * fadeK));
-    root.style.setProperty('--ov-composer-blur', `${10 * fadeK}px`);
+    // 面板与输入框的衬底浓度走自己的 panelPlate，不再乘 bottomFade/16——「底部黑框高度」只管
+    // 几何与虚化。以前两者绑死，出厂 bottomFade=0 的新装等于把整块面板画成全透明，
+    // 而调过这个滑条的老配置有边框，同一份代码在两台机器上长得不一样，且没人找得到开关。
+    const plateK = Math.max(0, Math.min(100, Number(s.panelPlate) || 0)) / 100;
+    root.style.setProperty('--ov-panel-bg-live', String(lt.panelBg * plateK));
+    root.style.setProperty('--ov-panel-bg-live-soft', String(lt.panelBg * 0.85 * plateK));
+    root.style.setProperty('--ov-panel-shadow-live', String(0.5 * plateK));
+    root.style.setProperty('--ov-panel-stroke-live', `rgba(255,255,255,${0.055 * plateK})`);
+    root.style.setProperty('--ov-composer-bg', String(0.55 * plateK));
+    root.style.setProperty('--ov-composer-blur', `${10 * plateK}px`);
+    root.dataset.plate = plateK === 0 ? '0' : '';  // 0=面板/输入框完全不画衬底
     root.dataset.fade = bf === 0 ? '0' : '';  // 0=完全无底部虚化
     root.style.setProperty('--ov-text-top', `${Number(s.topTextHeight) || 0}px`);  // 顶部文本高度（首行下移偏移）
     root.style.setProperty('--ov-panel-maxh', `${Number(s.vnTextHeight) || 56}vh`);  // VN 文本显示区固定高度
@@ -279,6 +283,8 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>正文对比度</span><input type="range" id="set-textcontrast" min="50" max="180" step="2" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-thinkingline" /><span>思维链顶部横条</span></label>
                 <div class="ov-seg" id="set-lighting"><button type="button" data-v="off">无</button><button type="button" data-v="dim">暗角</button><button type="button" data-v="glow">辉光</button></div>
+                <label class="ov-field"><span>面板底色</span><input type="range" id="set-panelplate" min="0" max="100" step="1" /></label>
+                <div class="ov-hint">正文面板与输入框的衬底浓度，含描边和投影。0=面板完全隐形，文字直接浮在背景图上。最终深浅还会乘上「灯光」档位（无/暗角/辉光）。</div>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-backgroundglow-enabled" /><span>背景泛光</span></label>
                 <label class="ov-field"><span>泛光亮度</span><input type="range" id="set-backgroundglow-brightness" min="0" max="200" step="5" /></label>
             </div>
@@ -396,6 +402,7 @@ function buildSettingsPane() {
     bindRange('#set-panelwidth', 'panelWidth', s, reflect);
     bindSeg('#set-scheme', 'scheme', s, reflect);
     bindSeg('#set-lighting', 'lighting', s, reflect);
+    bindRange('#set-panelplate', 'panelPlate', s, applyCurrentSettings);
     bindCheckbox('#set-backgroundglow-enabled', 'backgroundGlowEnabled', s, reflect);
     bindRange('#set-backgroundglow-brightness', 'backgroundGlowBrightness', s, applyCurrentSettings);
     bindSeg('#set-notify', 'notify', s, reflect);
@@ -642,6 +649,7 @@ function buildSettingsPane() {
 const RANGE_UNITS = {
     'set-fontsize': 'px', 'set-panelwidth': '%',
     'set-textbgopacity': '%', 'set-textbrightness': '%', 'set-textcontrast': '%',
+    'set-panelplate': '%',
     'set-backgroundglow-brightness': '%', 'set-audiovolume': '%',
     'set-bottomfade': 'vh', 'set-plaintextmaxheight': 'vh', 'set-vntextheight': 'vh',
     'set-toptextheight': 'px', 'set-composerhotzone': 'px', 'set-arrowsize': 'px',

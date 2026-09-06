@@ -351,12 +351,12 @@
 #st-overlay-root[data-plain="true"][data-fade="0"][data-topfade="0"] .ov-panel-text {
     -webkit-mask-image: none; mask-image: none;
 }
-/* bottomFade=0（全局，含 VN 模式）：去掉正文面板的深色渐变底与投影 → 真正「无黑框」；
-   底部输入区去掉压底渐变，只保留毛玻璃虚化（输入框浮现时柔化其后的正文，而非一块黑框）。 */
-#st-overlay-root[data-fade="0"] .ov-panel {
+/* panelPlate=0（全局，含 VN 模式）：面板衬底/描边/投影全不画，文字直接浮在背景图上；
+   底部输入区同样去掉压底渐变。跟的是「面板底色」而非「底部黑框高度」——后者只管几何与虚化。 */
+#st-overlay-root[data-plate="0"] .ov-panel {
     border-color: transparent;
 }
-#st-overlay-root[data-fade="0"] .ov-composer {
+#st-overlay-root[data-plate="0"] .ov-composer {
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
