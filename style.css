@@ -1,6 +1,9 @@
 ﻿/* style.css — 沉浸式视觉小说阅读器。light DOM，自身样式以 #st-overlay-root 前缀隔离。
-   性能原则：overlay 全屏不透明覆盖，背后 ST 不可见，故【不用 backdrop-filter】（卡顿元凶）；
-            玻璃质感用实色+渐变模拟。无无限循环动画，仅一次性入场过渡。
+   性能原则：overlay 全屏不透明覆盖，背后 ST 不可见，所以【不为了透出 ST 而用 backdrop-filter】——
+            那种用法纯属浪费还卡顿。大面积衬底一律实色+渐变模拟。无无限循环动画，仅一次性入场过渡。
+            例外：浮在自身内容之上的小面积组件（.ov-composer 糊正文、.ov-thinking、.ov-copy-fab、
+            .ov-asset-modal-card、.ov-num:focus）糊的是 overlay 内部的图与正文，不是背后的 ST，
+            面积小且不随滚动重算，属有意保留。**别看见 backdrop-filter 就当违规删掉。**
    外观可调项映射到 CSS 自定义属性（ui.js applyCurrentSettings 写入），切换零重渲。 */
 
 @keyframes ov-fade-in { from { opacity: 0; } to { opacity: 1; } }
