@@ -198,6 +198,9 @@ function applyReplyArrow() {
 // 测试面板的图位刷新入口。buildTestPane 只在装配时跑一次，而「切到测试 Tab」和
 // 「渲染到阅读器」都该保证内置图已经填好，所以把 rebuildSlots 暴露出来给这两处调。
 let _refreshTestSlots = null;
+// 「渲染到阅读器」的动作本体。顶栏那颗「测试」按钮直接调它，一步进到渲染后的阅读器；
+// 想改文本或换某一格的图，走抽屉里的「测试」标签页。
+let _runTestRender = null;
 
 function activateTab(name) {
     qAll('.ov-dtab').forEach((b) => b.classList.toggle('ov-on', b.dataset.tab === name));
@@ -214,7 +217,13 @@ function closeDrawerOnly() {
 function wireControls() {
     const bind = (sel, tab) => { const el = q(sel); if (el) el.addEventListener('click', () => openTab(tab)); };
     bind('#ov-settings-btn', 'settings');
-    bind('#ov-test-btn', 'test');
+    // 顶栏「测试」= 一步进到渲染后的阅读器（内置图会先补好），不再只是把抽屉翻到测试页。
+    // 要改测试文本或换某一格的图，走抽屉里的「测试」标签页。
+    const testBtn = q('#ov-test-btn');
+    if (testBtn) testBtn.addEventListener('click', () => {
+        if (_runTestRender) _runTestRender();
+        else openTab('test');   // 测试面板还没装配好时的兜底
+    });
     bind('#ov-assets-btn', 'assets');
     bind('#ov-props-btn', 'props');
     const close = q('#ov-drawer-close'); if (close) close.addEventListener('click', closeDrawerOnly);
@@ -843,11 +852,12 @@ function buildTestPane() {
         rebuildSlots();   // 换语言 → 角色名/道具名变了 → 重建图位
     }));
 
+    // 只填图，不渲染——「填入内置测试图」和「渲染到阅读器」是两件事，
+    // 填完还能继续改文本、换某一格的图，想看效果再自己点渲染。
     q('#test-fill-builtin').addEventListener('click', () => {
         suppressed.clear();                             // 显式要求填 → 之前清掉的也一并恢复
         fillBuiltin(collectSlots(ta.value), false);     // 覆盖式：这是用户主动点的「重来一遍」
         rebuildSlots();
-        loadTestMessage(ta.value);
     });
     // test-assets/ 随仓库附带，但别人可能把它删了（这批图是 AI 生成的占位素材，不是必需品）。
     // 缺文件时按钮点了只会填出一堆 404，所以探一张确认——六张要么都在要么都不在。
@@ -873,11 +883,13 @@ function buildTestPane() {
     });
 
     // 渲染前再补一次：确保「点测试就有图」，不用先去点「填入内置测试图」。
-    q('#test-render').addEventListener('click', () => {
+    const renderTest = () => {
         if (builtinOk) fillBuiltin(collectSlots(ta.value), true);
         loadTestMessage(ta.value);
         closeDrawer();
-    });
+    };
+    q('#test-render').addEventListener('click', renderTest);
+    _runTestRender = renderTest;   // 供顶栏「测试」按钮直接渲染，不经抽屉
     q('#test-reset').addEventListener('click', () => {
         ta.value = curLang === 'cn' ? SAMPLE_STAGE_TEXT_CN : SAMPLE_STAGE_TEXT_EN;
         rebuildSlots();
