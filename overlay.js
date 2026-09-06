@@ -251,5 +251,7 @@ export function insertIntoComposer(text) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     // 自动隐藏模式下需先显出输入框
     if (shell) shell.classList.add('ov-composer-show');
-    try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
+    // preventScroll 不能省：输入框在底部、自动隐藏时还在视口外，focus() 默认会把它
+    // 滚进视野——于是每点一次道具，整屏就跳一下。这里只要光标，不要那次滚动。
+    try { input.focus({ preventScroll: true }); const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
 }
