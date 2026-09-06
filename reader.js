@@ -443,14 +443,17 @@ function renderText(frag, animate = false, chatIndex) {
 
     // 先跑格式化（含 ST regex 脚本——messageFormatting 用真实 chatIndex 才让 AI_OUTPUT regex 生效）。
     const html = formatFrag(frag, chatIndex);
-    const renderKey = `${chatIndex ?? -1}:${frag.kind}:${html}`;
+    // <cg> 的标题独立于正文：不进 messageFormatting，也不进下面的 HTML 块检测（那条只该看正文）。
+    const titleHtml = cgTitleHtml(frag);
+    const full = titleHtml + html;
+    const renderKey = `${chatIndex ?? -1}:${frag.kind}:${full}`;
     if (!animate && renderKey === renderedTextKey) return;
     // 媒体/背景已就位、正文其实没变 → 文本层不动（重设 innerHTML 会把流式打字机清屏）。
     //   生成图落地那一帧 rebuild 正好走这里：各层照常重渲贴图，正文不被波及。
     if (!animate) {
         const prevKey = renderedTextKey;
         renderedTextKey = renderKey;
-        if (q('#ov-panel-text') && prevKey.split(':').slice(2).join(':') === html) return;
+        if (q('#ov-panel-text') && prevKey.split(':').slice(2).join(':') === full) return;
     } else {
         renderedTextKey = renderKey;
     }
@@ -459,7 +462,7 @@ function renderText(frag, animate = false, chatIndex) {
     //   插件自己的 UI 走舞台标签（scene/say/cg/item），不经过这条 HTML 检测路径。
     const detected = detectHtmlFromFormatted(html);
     if (detected) {
-        renderProseWithHtml(el, detected.prose, detected.html);
+        renderProseWithHtml(el, titleHtml + detected.prose, detected.html);
         return;
     }
 
@@ -468,9 +471,9 @@ function renderText(frag, animate = false, chatIndex) {
     // 回看历史 / 跳转条 / 已流式过的末片段一律瞬显。
     const hasHtmlBlock = !!(detected || (frag && frag.kind === 'plain' && isHtmlBlock(html)));
     if (animate && getSetting('typewriter') && frag.kind !== 'cg' && !hasHtmlBlock) {
-        runTypewriter(el, html, frag.kind !== 'plain');
+        runTypewriter(el, html, frag.kind !== 'plain');   // 这一支排除了 cg，titleHtml 必为空
     } else {
-        el.innerHTML = html;
+        el.innerHTML = full;
     }
 }
 
@@ -576,6 +579,20 @@ function formatFrag(frag, chatIndex) {
         }
     }
     return ensureTextBlocks(markBracketText(html));
+}
+
+/** `<cg img="标题">正文</cg>` 的 img 属性 → 正文面板顶部的标题行。
+ *  生图产出的 CG（stage-parser 的 genmedia 分支）里 img 与 raw 是同一句 prompt，
+ *  照搬会把同一句话上下各印一遍；省掉 img 属性时解析器也拿 caption 兜底当 img。
+ *  两种情况都表现为 img === raw，所以相同就不出标题。 */
+function cgTitleHtml(frag) {
+    if (!frag || frag.kind !== 'cg') return '';
+    const title = String(frag.img || '').trim();
+    if (!title || title === String(frag.raw || '').trim()) return '';
+    const p = document.createElement('p');
+    p.className = 'ov-cg-title';
+    p.textContent = title;   // img 是原样的属性串，必须转义
+    return p.outerHTML;
 }
 
 /** 给普通文本节点里的成对括号段套语义色；代码块保持原样。 */
@@ -1719,16 +1736,18 @@ function renderLiveFragment(lastFrag, parsed) {
     // 流式期间若已能检出 regex HTML 块（选项按钮等）→ 立即交 iframe 内联渲染，按钮可点；
     //   绝不走逐字打字机（会把 HTML 当纯文本切片、按钮点不到、定稿后再重建会闪一下）。
     const html = formatFragLive(lastFrag);
+    // 标题只在 </cg> 收尾、PAIR_RE 匹配成片段之后才出得来，流式中途没有属于正常表现。
+    const titleHtml = cgTitleHtml(lastFrag);
     const detected = detectHtmlFromFormatted(html);
     if (detected) {
         stopStreamTypewriter();
-        renderProseWithHtml(el, detected.prose, detected.html);
+        renderProseWithHtml(el, titleHtml + detected.prose, detected.html);
         return;
     }
     clearHtmlFrame(el);
     // 流式文本已经是 ST 的累积全文，直接替换，避免逐字追赶游标重置造成闪回。
     stopStreamTypewriter();
-    el.innerHTML = html;
+    el.innerHTML = titleHtml + html;
 }
 
 /** 流式累积全文 → 解析最新楼层、揭示最后片段（追看最新 beat）。

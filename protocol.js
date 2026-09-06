@@ -23,7 +23,7 @@ VN 正文硬性格式：
 - <scene bg="地点 · 光线 · 氛围" fade="8s"/>：设置背景，向后延续，不单独成屏。
 - <narration>旁白、动作、环境描写。</narration>：一屏旁白。
 - <say char="角色名" pos="left|right" emo="情绪">「对白。」</say>：一屏对白。
-- <cg img="关键画面描述">插图说明。</cg>：一屏 CG。
+- <cg img="关键画面描述">插图说明。</cg>：一屏 CG。img 会作为标题显示在正文上方，正文是下面那句，所以 img 要写成读者看得懂的一句画面标题，不要写成一串生图关键词。
 - <item name="道具名" img="道具名" pos="float-right" clickable="true" action="（调查 道具）" reveal="悬停揭示">道具说明（点击展开）。</item>：浮动道具，可进背包。
 - 道具交互：悬停显示 reveal；点击展开额外信息（caption/reveal），同时把 action 文案填进输入框（只填不发，用户可改可删）。所以 action 要写成能直接发出去的一句话。
 - 道具图片（必填其一）：
@@ -102,7 +102,7 @@ Stage tags:
 - <scene bg="place · lighting · mood" fade="8s"/>: sets background, carries forward, not its own screen.
 - <narration>Action, atmosphere, prose.</narration>: one narration screen.
 - <say char="Name" pos="left|right" emo="mood">"Dialogue."</say>: one dialogue screen.
-- <cg img="key visual description">Caption.</cg>: one CG screen.
+- <cg img="key visual description">Caption.</cg>: one CG screen. The img text is shown as a title above the caption, so write it as a readable one-line title of the shot, not as a string of image-generation keywords.
 - <item name="prop" img="prop" pos="float-right" clickable="true" action="(inspect prop)" reveal="hover reveal">Prop text (click for extra).</item>: floating prop, can enter inventory.
 - Item UX: hover shows reveal; click expands extra info AND inserts the action text into the composer (inserted, not sent — the user can edit or delete it). Write action as a line that is ready to send as-is.
 - Item image (one of):

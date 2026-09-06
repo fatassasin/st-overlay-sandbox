@@ -4,7 +4,7 @@
 //     <scene bg="..." fade="12s"/>   背景层，向后结转（不单独成屏）
 //     <narration>白字旁白</narration>  无说话人正文 → 一片段（一屏）
 //     <say char="x" pos="left" emo="y">「对白」</say>  立绘+对白 → 一片段
-//     <cg img="...">caption</cg>       全屏插画 → 一片段（点击推进）
+//     <cg img="...">caption</cg>       全屏插画 → 一片段（点击推进）；img 作标题、caption 作正文
 //     <item img="..." name="..." url="..." pos="float-right" clickable="true" action="（翻开 便签）" reveal="揭示">caption</item>
 //       道具浮图，附着当前片段 + 进背包。clickable/action/reveal 由 AI 决定：
 //       clickable="false" → 仅展示；hover 显示 reveal；click 展开额外信息（caption/reveal）。

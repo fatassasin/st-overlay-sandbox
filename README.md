@@ -19,13 +19,19 @@ SillyTavern 原生是聊天气泡流。这个扩展提供另一种读法：把�
 
 ## 安装
 
-把整个文件夹放进你的用户扩展目录：
+推荐用 SillyTavern 自带的扩展下载器：打开 **扩展面板 → Download Extensions & Assets（下载扩展）**，把下面这行仓库链接填进输入框，点下载。
+
+```
+https://github.com/fatassasin/st-overlay-sandbox
+```
+
+装完刷新 SillyTavern，扩展列表里会出现 "Overlay Sandbox"。
+
+也可以手动放，把整个文件夹丢进你的用户扩展目录，效果一样：
 
 ```
 <SillyTavern 根目录>/data/<你的用户名>/extensions/st-overlay-sandbox/
 ```
-
-然后刷新 SillyTavern。扩展列表里会出现 "Overlay Sandbox"。
 
 > 注意：SillyTavern 注入扩展 CSS 时不带版本串，`<link>` 已存在就跳过重注。**更新本扩展后必须 Ctrl+Shift+R 硬刷新**，普通 F5 拿到的是缓存的旧样式。
 
@@ -94,12 +100,26 @@ enableServerPlugins: true
 | `<scene bg= fade=/>` | 切换背景，可指定淡入时长 |
 | `<narration>` | 旁白段落 |
 | `<say char= pos= emo=>` | 角色台词；`pos` 定左右立绘位，`emo` 定表情图 |
-| `<cg>` | 全屏 CG |
+| `<cg img=>` | 全屏 CG；`img` 作标题显示在正文上方，标签内文字作正文 |
 | `<item img= pos= clickable= action= reveal=>` | 道具浮层，可点击、可回填动作文本 |
 | `<opt>` | 可点击的分支选项，点击后填入输入框 |
 | `<bgm>` `<sfx>` `<voice>` | 背景音乐 / 音效 / 语音 |
 | `<think>` | 思维链，收进顶部横条，不混进正文 |
 | `<overlay>{JSON}</overlay>` | 素材库增删等结构化指令 |
+
+### 图片从哪来
+
+**插件本身不生成图片，也没有内置图库。**舞台上的背景、CG、立绘、道具图，全部要靠**明确的 URL 地址**填进去——插件只负责把那个地址贴到对应的图层上。所以想让画面真的有图，得配一套出图的东西：SillyTavern 的 Image Generation 扩展，或者你自己在本地跑的 ComfyUI / A1111 之类。
+
+生图软件出图后会给一个可访问的地址，把它写进 `src`，再在后面紧跟一个**用途后缀**告诉插件这张图往哪贴：
+
+```html
+<img src="http://127.0.0.1:8188/view?filename=Example"><background/>
+```
+
+`8188` 是 ComfyUI 的默认端口，`/view?filename=…` 是它取图的接口；换成 A1111 或任何图床，只要地址在浏览器里能直接打开就行。后缀换成 `<cg/>` 就是全屏 CG，`<item/>` 就是道具图——完整的后缀清单和其他写法（`<pic src=…>`、`title` 元数据等）见 [`MEDIA_FORMATS.md`](MEDIA_FORMATS.md)。
+
+没有 URL 时，`<scene bg="…">` / `<cg img="…">` 这些标签依然能用：插件会拿引号里的描述去**素材库**里找同名素材（素材库可以事先用 `<overlay>{JSON}</overlay>` 或设置面板攒好，也能用 `<fetch category="bg">文件夹/名</fetch><background/>` 直接调用）。找不到就留一个写着该描述的占位层，文字部分照常渲染，不影响推进。
 
 完整的内置提示词见 [`protocol.js`](protocol.js) 的 `PROTOCOL_TEXT_CN` / `PROTOCOL_TEXT_EN`，示例见 [`VN_PROMPT.md`](VN_PROMPT.md)，媒体格式说明见 [`MEDIA_FORMATS.md`](MEDIA_FORMATS.md)。
 
