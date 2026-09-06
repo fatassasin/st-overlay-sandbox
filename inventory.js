@@ -8,6 +8,7 @@
 // M1：道具图为占位（白线框 + img 描述 + caption）；M2 接生图后换真图。
 
 import { q } from './overlay.js';
+import { resolveImage } from './assets.js';
 import { findAssetByPath, listAssets, removeAsset } from './assets-store.js';
 
 const TOP_COUNT_ID = 'ov-bag-count';
@@ -181,9 +182,15 @@ function renderBagSection() {
         cell.title = it.reveal ? '悬停显示揭示 · 点击展开详情' : '点击展开详情';
         const ph = document.createElement('div');
         ph.className = 'ov-bag-img ov-placeholder';
-        if (it.url) {
+        // 取图口径必须和舞台上的道具浮层（reader.js renderItems）完全一致：显式 url 优先，
+        // 否则回落到 resolveImage（测试预览图 → 素材库）。这里以前只认 it.url，于是素材库
+        // 里明明有图、测试面板也填了图，背包卡却永远是「道具名 + 一行说明」的纯文字。
+        const img = it.url
+            ? { url: it.url }
+            : resolveImage('item', { img: it.img, caption: it.caption });
+        if (img && img.url) {
             ph.classList.remove('ov-placeholder');
-            ph.style.backgroundImage = 'url("' + String(it.url).replace(/"/g, '') + '")';
+            ph.style.backgroundImage = 'url("' + String(img.url).replace(/"/g, '') + '")';
             ph.style.backgroundSize = 'contain';
             ph.style.backgroundPosition = 'center';
             ph.style.backgroundRepeat = 'no-repeat';
