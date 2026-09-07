@@ -293,6 +293,7 @@ function buildSettingsPane() {
                 <label class="ov-field checkbox"><input type="checkbox" id="set-showfloormeta" /><span>显示楼层号（左上角）</span></label>
                 <label class="ov-field"><span>滚轮换楼力度</span><input type="range" id="set-wheelstrength" min="200" max="1400" step="20" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-pointernavigation" /><span title="取消后左右键不再切楼层；拖动选择、右键复制、滚轮和楼层按钮不受影响。">左右键切换楼层</span></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-enteratstfloor" /><span title="点右上角图标进来时，落在酒馆里正看着的那一楼，而不是直接跳到最新楼。取消后每次都从最新楼开始。">从酒馆当前位置进入</span></label>
                 <label class="ov-field"><span>底部黑框高度</span><input type="range" id="set-bottomfade" min="0" max="40" step="1" /></label>
                 <label class="ov-field"><span>顶部文本高度</span><input type="range" id="set-toptextheight" min="0" max="200" step="4" /></label>
                 <label class="ov-field"><span>底部文本高度</span><input type="range" id="set-plaintextmaxheight" min="0" max="70" step="1" /></label>
@@ -410,6 +411,7 @@ function buildSettingsPane() {
     });
     bindRange('#set-wheelstrength', 'wheelStrength', s);
     bindCheckbox('#set-pointernavigation', 'pointerNavigation', s, reflect);
+    bindCheckbox('#set-enteratstfloor', 'enterAtStFloor', s);
     bindRange('#set-bottomfade', 'bottomFade', s, reflect);
     bindRange('#set-toptextheight', 'topTextHeight', s, reflect);
     bindRange('#set-vntextheight', 'vnTextHeight', s, reflect);

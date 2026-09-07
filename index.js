@@ -14,6 +14,7 @@
 
 import { initOverlay, show as showOverlay, hide as hideOverlay, isVisible, q as ovq, getShell } from './overlay.js';
 import { initBridge, refreshOnOpen, clearWaitingOnClose } from './bridge.js';
+import { jumpToChatIndex, hasLiveGeneration } from './reader.js';
 import { wireUI, applyCurrentSettings } from './ui.js';
 import { applyInstruction, applyAll } from './parser.js';
 import { parseStageMessage, hasOverlayStageTags, stripOverlayStageTags, stripForTavernDisplay, stripVnMarker, processSaveTags } from './stage-parser.js';
@@ -56,8 +57,40 @@ function waitForContext(maxTries = 40, interval = 250) {
 
 // —— 打开 / 最小化 ——
 
-function open() {
+/** 读「用户在酒馆原生聊天里正看着哪一楼」→ 该条的 mesid（= chat 数组下标）。
+ *  取与可视区交叠最多的那条 .mes：滚到底时它就是末楼（与旧行为一致），
+ *  停在半空翻历史时是屏幕上占地最大的那条，和肉眼判断的「我在看这楼」一致。
+ *  拿不到（DOM 未就绪 / 没有消息 / 聊天区不可见）返回 -1，调用方保持原落点。 */
+function currentStChatIndex() {
+    try {
+        const chat = document.getElementById('chat');
+        if (!chat) return -1;
+        const box = chat.getBoundingClientRect();
+        if (!(box.bottom > box.top)) return -1;
+        let bestIdx = -1;
+        let bestArea = 0;
+        for (const el of chat.querySelectorAll('.mes[mesid]')) {
+            const r = el.getBoundingClientRect();
+            const overlap = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
+            if (overlap > bestArea) {
+                bestArea = overlap;
+                bestIdx = Number(el.getAttribute('mesid'));
+            }
+        }
+        return Number.isInteger(bestIdx) ? bestIdx : -1;
+    } catch (_) { return -1; }
+}
+
+/** @param {{atStFloor?: boolean}} [opts] atStFloor:false 强制落最新楼（自动弹出用），
+ *  不传则按设置 enterAtStFloor 决定跟不跟酒馆的阅读位置。 */
+function open(opts = {}) {
+    // 落点要在建舞台、显外壳之前读：showOverlay 会盖满屏幕并可能进全屏，
+    // 之后再量 #chat 的可视区就不是用户刚才看到的那一屏了。
+    const stIdx = (opts.atStFloor !== false && getSetting('enterAtStFloor'))
+        ? currentStChatIndex() : -1;
     refreshOnOpen();   // 先完成内容重建，避免旧舞台先淡入后再次跳变
+    // 生成中不抢落点：那一屏正在逐字出，refreshOnOpen 已经接管了实时楼。
+    if (stIdx >= 0 && !hasLiveGeneration()) jumpToChatIndex(stIdx);
     showOverlay();
     syncLaunchBtn();
     applyChromeState();
@@ -360,7 +393,7 @@ function makeOnMessage(ctx) {
             // 3) 有舞台内容则按设置自动弹出（每条消息只一次；生成中由 bridge once-per-gen 主路径）
             if (hasTags && getSetting('autoShow') && !isVisible() && !_autoShownMsg.has(idx)) {
                 _autoShownMsg.add(idx);
-                open();
+                open({ atStFloor: false });
             }
         } catch (e) { console.error('[overlay] 处理消息出错：', e); }
     };

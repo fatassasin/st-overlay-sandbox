@@ -89,6 +89,7 @@ export const DEFAULT_SETTINGS = {
     vnTextHeight: 32,       // 视觉小说正文显示区高度（vh 占屏）→ --ov-panel-maxh（固定高度、内部滚动）
     plainTextMaxHeight: 16, // 兼容旧 key：底部文本高度（vh），0=无额外底部留白 → --ov-plain-bottom-gap
     pointerNavigation: true, // 左右键导航开关：开=保持当前切楼/切片；关=左右键不导航
+    enterAtStFloor: true,   // 点右上角图标进 overlay 时，落到「酒馆里正在看的那一楼」而不是最新楼
     audioEnabled: true,     // 音频标签（bgm/sfx/voice）总开关
     audioVolume: 80,        // 音频总音量 %
     fullscreen: true,       // 记忆上次全屏开关，open() 时恢复

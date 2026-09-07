@@ -1944,6 +1944,26 @@ export function jumpToLatest() {
     renderCurrent(!!short);
 }
 
+/** 跳到「包含指定 ST 聊天下标」的楼层（从酒馆当前阅读位置进入 overlay 时用）。
+ *  用户停的那条可能没有对应楼层（用户消息、系统消息、纯背景楼被 rebuild 跳过），
+ *  故取 chatIndex ≤ 目标的最后一楼——即他视线所在处上方最近的一楼。
+ *  落片段沿用 rebuild 的语义：VN 楼从首片段读起（落末片段等于跳过整场戏），普通楼落末片段。
+ *  一律瞬显不走打字机：这是翻历史，不是新回复入场。
+ *  @returns {boolean} 是否真的跳了（无楼层 / 下标非法 → false，调用方保持原落点） */
+export function jumpToChatIndex(chatIndex) {
+    const idx = Number(chatIndex);
+    if (!floors.length || !Number.isInteger(idx) || idx < 0) return false;
+    let floorIdx = -1;
+    for (let i = 0; i < floors.length; i++) {
+        if (floors[i].chatIndex <= idx) floorIdx = i;
+        else break;
+    }
+    if (floorIdx < 0) floorIdx = 0;
+    pos = { floorIdx, fragIdx: floors[floorIdx].plain ? lastFragIdx(floorIdx) : 0 };
+    renderCurrent(false);
+    return true;
+}
+
 /**
  * 测试预览：把任意文本当作一个「合成楼层」追加到模型末尾并跳过去渲染，
  * 不触碰 ST 的 chat（纯本地预览，供「测试」标签页）。下次真实 rebuild 会覆盖掉它。
