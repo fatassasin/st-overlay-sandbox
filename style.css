@@ -434,6 +434,11 @@
 }
 #st-overlay-root .ov-status:empty { display: none; }
 #st-overlay-root .ov-status > * { pointer-events: auto; }
+/* 普通楼层（无舞台标签）不显示状态条：HUD 是 <overlay> 舞台协议建出来的 GUI，
+   属于 VN 舞台的一部分，翻回普通楼层还挂在极简阅读器上就是残留。
+   这里只隐藏不销毁——hudOps 仅在消息到达时应用一次（index.js 的 MESSAGE_RECEIVED），
+   rebuild() 与任何导航都不会重放，真把 _specs 清了，翻回 VN 楼层它就再也回不来了。 */
+#st-overlay-root[data-plain="true"] .ov-status { display: none; }
 
 /* ===== 片段跳转条（旧楼层才显） ===== */
 #st-overlay-root .ov-jumpbar {
