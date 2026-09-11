@@ -15,6 +15,7 @@
 import { initOverlay, show as showOverlay, hide as hideOverlay, isVisible, q as ovq, getShell } from './overlay.js';
 import { initBridge, refreshOnOpen, clearWaitingOnClose } from './bridge.js';
 import { jumpToChatIndex, hasLiveGeneration } from './reader.js';
+import * as hk from './hotkey.js';
 import { wireUI, applyCurrentSettings } from './ui.js';
 import { applyInstruction, applyAll } from './parser.js';
 import { parseStageMessage, hasOverlayStageTags, stripOverlayStageTags, stripForTavernDisplay, stripVnMarker, processSaveTags } from './stage-parser.js';
@@ -404,8 +405,29 @@ function registerHotkey() {
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
             e.preventDefault();
             toggleOpen();
+            return;
         }
+        // 自定义快捷键（出厂空 = 不启用）。
+        // 不带修饰键的组合要让开输入场景，否则在酒馆输入框里打那个字母就会触发。
+        const inEditable = isEditableTarget(e.target);
+        const fire = (combo, run) => {
+            if (!combo || !hk.matches(e, combo)) return false;
+            if (inEditable && !hk.hasModifier(combo)) return false;
+            e.preventDefault();
+            run();
+            return true;
+        };
+        if (fire(getSetting('hotkeyToggle'), toggleOpen)) return;
+        // 全屏只在 overlay 开着时有意义：关着按等于把整个酒馆页面全屏，不是用户要的。
+        fire(getSetting('hotkeyFullscreen'), () => { if (isVisible()) toggleFullscreen(); });
     });
+}
+
+/** 焦点是否在可输入处（含 ST 那些 contenteditable 的输入框） */
+function isEditableTarget(t) {
+    if (!t || !t.tagName) return false;
+    const tag = t.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable === true;
 }
 
 const KEY_DEFS = {

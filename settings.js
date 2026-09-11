@@ -93,6 +93,10 @@ export const DEFAULT_SETTINGS = {
     audioEnabled: true,     // 音频标签（bgm/sfx/voice）总开关
     audioVolume: 80,        // 音频总音量 %
     fullscreen: true,       // 记忆上次全屏开关，open() 时恢复
+    // 自定义快捷键。出厂空 = 不启用（Ctrl/Cmd+Shift+O 那条内置的不受影响，始终可用）。
+    // 存法见 hotkey.js：修饰键在前 + e.code，如 'ctrl+KeyM'。
+    hotkeyToggle: '',       // 等效点插件图标：开/关 overlay
+    hotkeyFullscreen: '',   // 等效点全屏按钮：进/出全屏
     thinkingLine: true,     // 思维链顶部横条
     keyButtonEnabled: true, // 显示可移动虚拟按键
     keyButtonCode: 'AltRight',

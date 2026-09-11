@@ -17,6 +17,7 @@ import { exitTestPreview, loadTestMessage } from './reader.js';
 import { setTestImage, getTestImage, slotKeyFor, placeholderLabel } from './assets.js';
 import { parseStageMessage } from './stage-parser.js';
 import { applyIdleDim } from './idle-dim.js';
+import * as hk from './hotkey.js';
 
 // —— 外观预设映射 ——
 const FONT_STACKS = {
@@ -294,6 +295,12 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>滚轮换楼力度</span><input type="range" id="set-wheelstrength" min="200" max="1400" step="20" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-pointernavigation" /><span title="取消后左右键不再切楼层；拖动选择、右键复制、滚轮和楼层按钮不受影响。">左右键切换楼层</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-enteratstfloor" /><span title="点右上角图标进来时，落在酒馆里正看着的那一楼，而不是直接跳到最新楼。取消后每次都从最新楼开始。">从酒馆当前位置进入</span></label>
+                <div class="ov-row"><span class="ov-hint" title="等效点右上角图标：开/关阅读器。出厂未设置；Ctrl/Cmd+Shift+O 始终可用。">开关阅读器快捷键</span>
+                    <button class="ov-btn ghost" id="set-hotkey-toggle" type="button">未设置</button>
+                    <button class="ov-btn ghost" id="set-hotkey-toggle-clear" type="button" title="清除">×</button></div>
+                <div class="ov-row"><span class="ov-hint" title="等效点全屏按钮：进/出全屏。仅在阅读器打开时生效。出厂未设置。">全屏快捷键</span>
+                    <button class="ov-btn ghost" id="set-hotkey-fullscreen" type="button">未设置</button>
+                    <button class="ov-btn ghost" id="set-hotkey-fullscreen-clear" type="button" title="清除">×</button></div>
                 <label class="ov-field"><span>底部黑框高度</span><input type="range" id="set-bottomfade" min="0" max="40" step="1" /></label>
                 <label class="ov-field"><span>顶部文本高度</span><input type="range" id="set-toptextheight" min="0" max="200" step="4" /></label>
                 <label class="ov-field"><span>底部文本高度</span><input type="range" id="set-plaintextmaxheight" min="0" max="70" step="1" /></label>
@@ -412,6 +419,8 @@ function buildSettingsPane() {
     bindRange('#set-wheelstrength', 'wheelStrength', s);
     bindCheckbox('#set-pointernavigation', 'pointerNavigation', s, reflect);
     bindCheckbox('#set-enteratstfloor', 'enterAtStFloor', s);
+    bindHotkey('#set-hotkey-toggle', '#set-hotkey-toggle-clear', 'hotkeyToggle');
+    bindHotkey('#set-hotkey-fullscreen', '#set-hotkey-fullscreen-clear', 'hotkeyFullscreen');
     bindRange('#set-bottomfade', 'bottomFade', s, reflect);
     bindRange('#set-toptextheight', 'topTextHeight', s, reflect);
     bindRange('#set-vntextheight', 'vnTextHeight', s, reflect);
@@ -1228,6 +1237,36 @@ function renderLog() {
 }
 
 // —— 绑定助手 ——
+/** 快捷键录入：点按钮 → 下一次按键存为组合键。旁边的 × 清空（= 停用该快捷键）。
+ *  录入期间在捕获阶段吃掉按键，免得正在录的 Ctrl+M 顺手触发了别处的监听。 */
+function bindHotkey(btnSel, clearSel, key) {
+    const btn = q(btnSel);
+    if (!btn) return;
+    const paint = () => { btn.textContent = hk.label(getSetting(key)); };
+    paint();
+    const clear = q(clearSel);
+    if (clear) clear.addEventListener('click', () => { setSetting(key, ''); paint(); });
+    btn.addEventListener('click', () => {
+        if (btn.dataset.capturing) return;
+        btn.dataset.capturing = '1';
+        btn.textContent = '请按组合键…';
+        const onKey = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.code === 'Escape') { finish(); return; }   // Esc = 放弃，不改原值
+            if (hk.isModifierOnly(e)) return;                 // 等一个真正的主键
+            const combo = hk.fromEvent(e);
+            if (combo) setSetting(key, combo);
+            finish();
+        };
+        const finish = () => {
+            window.removeEventListener('keydown', onKey, true);
+            delete btn.dataset.capturing;
+            paint();
+        };
+        window.addEventListener('keydown', onKey, true);
+    });
+}
 function bindCheckbox(sel, key, s, after) { const el = q(sel); if (!el) return; el.checked = !!s[key]; el.addEventListener('change', () => { setSetting(key, el.checked); after?.(); }); }
 function bindRange(sel, key, s, after) { const el = q(sel); if (!el) return; el.value = String(s[key]); el.addEventListener('input', () => { setSetting(key, Number(el.value)); after?.(); }); }
 function bindSelect(sel, key, s, after) { const el = q(sel); if (!el) return; el.value = String(s[key]); el.addEventListener('change', () => { setSetting(key, el.value); after?.(); }); }
