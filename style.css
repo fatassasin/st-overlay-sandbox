@@ -439,6 +439,10 @@
    这里只隐藏不销毁——hudOps 仅在消息到达时应用一次（index.js 的 MESSAGE_RECEIVED），
    rebuild() 与任何导航都不会重放，真把 _specs 清了，翻回 VN 楼层它就再也回不来了。 */
 #st-overlay-root[data-plain="true"] .ov-status { display: none; }
+/* 生成中、字还没来的那一屏同理：舞台已被 enterWaiting 清空，只剩上一楼的 HUD 悬在黑屏上。
+   等待期还不知道下一楼是 VN 还是普通楼，data-plain 只能先记 'false'，指望不上上面那条，
+   故另立 data-live-blank（见 reader.js 的 setLiveBlank）。出第一段内容就撤，VN 楼的 HUD 自然回来。 */
+#st-overlay-root[data-live-blank="true"] .ov-status { display: none; }
 
 /* ===== 片段跳转条（旧楼层才显） ===== */
 #st-overlay-root .ov-jumpbar {

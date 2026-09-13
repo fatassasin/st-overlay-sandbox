@@ -287,6 +287,19 @@ function latestRenderableFragment(parsed) {
 
 // —— 渲染 ——
 
+/** 标记「实时楼还没出任何内容」的那一屏（发出去了、字还没来）。
+ *  这一屏 enterWaiting 已经把背景/立绘/CG/说话人/正文/道具全清空，唯独 HUD 清不掉：
+ *  <overlay> 的 ops 只在消息到达时应用一次，rebuild 与导航都不重放，真清了 _specs
+ *  翻回 VN 楼就再也回不来（同 style.css 里 [data-plain] 那条的理由）。于是只藏不拆。
+ *  data-plain 在这里指望不上——等待期还不知道下一楼是 VN 还是普通楼，enterWaiting
+ *  只能先写 'false'，那条隐藏规则就不生效，上一楼的 HUD 便一直悬在黑屏上。 */
+function setLiveBlank(on) {
+    const root = getRoot();
+    if (!root) return;
+    if (on) root.dataset.liveBlank = 'true';
+    else delete root.dataset.liveBlank;
+}
+
 function renderEmpty() {
     const root = getRoot();
     if (root && root.dataset.html === 'true') root.dataset.html = 'false';
@@ -335,6 +348,7 @@ function renderCurrent(animate = false, opts = {}) {
     // 它按 origin 定点清，真实楼层的状态条和 BGM 留着。
     const tail = floors[floors.length - 1];
     if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestResidue(); }
+    setLiveBlank(false);   // 落到某一楼了（定稿重建 / 翻走离开实时楼），HUD 交回 data-plain 决定
     resetStageState({ keepStream: !!opts.keepStream, preserveScroll: !!opts.preserveScroll });
     const frag = currentFragment();
     if (!frag) { renderEmpty(); return; }
@@ -1647,6 +1661,7 @@ export function enterWaiting() {
     stopStreamTypewriter();
     const root = getRoot();
     if (root) { root.dataset.plain = 'false'; root.dataset.html = 'false'; }
+    setLiveBlank(true);
     // 发送后立刻清掉上一轮思维链，避免误显旧回复的 think；新 token 再由 onStream 写入
     hideThinking();
     renderBg(undefined);
@@ -1685,6 +1700,7 @@ export function abortLive() {
     streamMode = 'unknown';
     stopStreamTypewriter();
     forceClearWaiting();
+    setLiveBlank(false);
     hideThinking();
 }
 
@@ -1711,6 +1727,7 @@ function exitWaiting() {
 function renderLiveFragment(lastFrag, parsed) {
     const isPlain = !!parsed.plain || lastFrag.kind === 'plain';
     streamIsPlain = isPlain;
+    setLiveBlank(false);   // 这一屏开始有内容了，HUD 交回 data-plain 决定
     const root = getRoot();
     if (root) root.dataset.plain = isPlain ? 'true' : 'false';
     if (isPlain) {
