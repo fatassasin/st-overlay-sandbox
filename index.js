@@ -14,7 +14,7 @@
 
 import { initOverlay, show as showOverlay, hide as hideOverlay, isVisible, q as ovq, getShell } from './overlay.js';
 import { initBridge, refreshOnOpen, clearWaitingOnClose } from './bridge.js';
-import { jumpToChatIndex, hasLiveGeneration } from './reader.js';
+import { jumpToChatIndex, hasLiveGeneration, captureScroll, restoreScroll } from './reader.js';
 import * as hk from './hotkey.js';
 import { wireUI, applyCurrentSettings } from './ui.js';
 import { applyInstruction, applyAll } from './parser.js';
@@ -93,6 +93,9 @@ function open(opts = {}) {
     // 生成中不抢落点：那一屏正在逐字出，refreshOnOpen 已经接管了实时楼。
     if (stIdx >= 0 && !hasLiveGeneration()) jumpToChatIndex(stIdx);
     showOverlay();
+    // 落点定下来、外壳也可见了再还原偏移：showOverlay 之前 isVisible() 还是 false，
+    // 上面那几趟重建/跳楼里的 captureScroll 都会自行让开，不会反过来把要还原的值冲掉。
+    restoreScroll();
     syncLaunchBtn();
     applyChromeState();
     applyKeyButtonState();
@@ -101,6 +104,7 @@ function open(opts = {}) {
     if (getSetting('fullscreen')) requestFullscreenSafe();
 }
 function minimize() {
+    captureScroll();          // 趁 overlay 还可见、舞台还没被清，先记下这一屏滚到哪儿
     clearWaitingOnClose();   // 先清理状态，避免退场动画期间舞台再次变更
     hideOverlay();
     syncLaunchBtn();

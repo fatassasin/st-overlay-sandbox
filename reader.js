@@ -8,12 +8,12 @@
 //
 // 性能：不重复格式化历史；只在进入某片段时 messageFormatting 一次。
 
-import { q, getStage, getRoot, getShell, insertIntoComposer } from './overlay.js';
+import { q, getStage, getRoot, getShell, insertIntoComposer, isVisible } from './overlay.js';
 import { parseStageMessage, isVnStageMessage, splitThinking } from './stage-parser.js';
 import { splitBracketSegments } from './text-coloring.js';
 import { isDuplicateAssistantFloor } from './floor-filter.js';
 import { resolveImage, placeholderLabel, clearTestImages } from './assets.js';
-import { getSetting } from './settings.js';
+import { getSetting, setSetting } from './settings.js';
 import { setItems } from './inventory.js';
 
 let ctxRef = null;
@@ -287,6 +287,49 @@ function latestRenderableFragment(parsed) {
 
 // —— 渲染 ——
 
+// —— 滚动位置记忆 ——
+// 只记一条 { chatIndex, fragIdx, top }：换一屏就顶掉，所以上一屏存的偏移自然作废。
+// 存进设置而不是内存，刷新酒馆、关浏览器、重启后端之后再打开仍在原处。
+let shownKey = null;   // 现在挂在 #ov-panel-text 里的是哪一屏；实时楼 / 空屏为 null（不记）
+
+/** 当前这一屏的身份。合成楼（测试预览）没有真实 chatIndex，不参与记忆。 */
+function currentScrollKey() {
+    const fl = currentFloor();
+    if (!fl || fl.synthetic || !Number.isInteger(fl.chatIndex) || fl.chatIndex < 0) return null;
+    return { chatIndex: fl.chatIndex, fragIdx: pos.fragIdx };
+}
+
+/** 存下当前这一屏滚到哪儿。切屏时（renderCurrent 把 scrollTop 清零之前）与关界面时各调一次。
+ *  只在 overlay 可见时记：open() 里的重建与跳楼全发生在 showOverlay 之前，
+ *  那几趟 renderCurrent 出来的 scrollTop 已经是 0，照记就把待还原的值冲掉了。 */
+export function captureScroll() {
+    if (!getSetting('rememberScroll') || !shownKey || !isVisible()) return;
+    const el = q('#ov-panel-text');
+    if (!el) return;
+    setSetting('scrollMemo', {
+        chatIndex: shownKey.chatIndex, fragIdx: shownKey.fragIdx, top: Math.round(el.scrollTop),
+    });
+}
+
+/** 落点定下来之后还原偏移；存的不是当前这一屏就什么都不做（换屏 = 旧偏移作废）。
+ *  @returns {boolean} 是否真的还原了 */
+export function restoreScroll() {
+    if (!getSetting('rememberScroll')) return false;
+    const memo = getSetting('scrollMemo');
+    if (!memo || !shownKey) return false;
+    if (memo.chatIndex !== shownKey.chatIndex || memo.fragIdx !== shownKey.fragIdx) return false;
+    const el = q('#ov-panel-text');
+    const top = Math.max(0, Math.round(Number(memo.top) || 0));
+    if (!el || !top) return false;
+    el.scrollTop = top;
+    // 正文里的图片/内联 HTML 可能还没撑开高度，上面这一下会被夹到当前 scrollHeight。
+    // 下一帧若还没到位就再推一次；用户这一帧里已经自己滚开了就不抢。
+    requestAnimationFrame(() => {
+        if (el.scrollTop < top && el.scrollHeight - el.clientHeight >= top) el.scrollTop = top;
+    });
+    return true;
+}
+
 /** 标记「实时楼还没出任何内容」的那一屏（发出去了、字还没来）。
  *  这一屏 enterWaiting 已经把背景/立绘/CG/说话人/正文/道具全清空，唯独 HUD 清不掉：
  *  <overlay> 的 ops 只在消息到达时应用一次，rebuild 与导航都不重放，真清了 _specs
@@ -346,12 +389,14 @@ function renderCurrent(animate = false, opts = {}) {
     // 而 #test-render 渲染完就直接 closeDrawer()，那条路径根本不经过 Tab 切换。
     // HUD 组件 / 音频 / 测试图 / 道具栏都不随导航自动复位，统一交给 clearTestResidue，
     // 它按 origin 定点清，真实楼层的状态条和 BGM 留着。
+    captureScroll();       // 先存「正要离开的这一屏」滚到哪儿——resetStageState 下一行就把 scrollTop 清零了
     const tail = floors[floors.length - 1];
     if (tail && tail.synthetic && pos.floorIdx < floors.length - 1) { floors.pop(); clearTestResidue(); }
     setLiveBlank(false);   // 落到某一楼了（定稿重建 / 翻走离开实时楼），HUD 交回 data-plain 决定
     resetStageState({ keepStream: !!opts.keepStream, preserveScroll: !!opts.preserveScroll });
     const frag = currentFragment();
-    if (!frag) { renderEmpty(); return; }
+    if (!frag) { shownKey = null; renderEmpty(); return; }
+    shownKey = currentScrollKey();
 
     const fl = currentFloor();
     const isPlain = !!(fl && fl.plain) || frag.kind === 'plain';
@@ -1341,6 +1386,13 @@ function wireNavigation() {
         te0.addEventListener('scroll', () => {
             if (selectLock && selectLock.active && selectLock.el === te0) te0.scrollTop = selectLock.y;
         }, { passive: true });
+        // 滚停下来就存一次。切屏与关界面另有同步的 captureScroll，这里补的是「停在原地不动」的情况：
+        // 直接刷新酒馆、关标签页、崩了，都不必先关阅读器才留得住位置。
+        let scrollMemoTimer = 0;
+        te0.addEventListener('scroll', () => {
+            clearTimeout(scrollMemoTimer);
+            scrollMemoTimer = setTimeout(captureScroll, 400);
+        }, { passive: true });
     }
 }
 
@@ -1662,6 +1714,7 @@ export function enterWaiting() {
     const root = getRoot();
     if (root) { root.dataset.plain = 'false'; root.dataset.html = 'false'; }
     setLiveBlank(true);
+    shownKey = null;   // 实时楼不记滚动位置：它没有稳定的 chatIndex，定稿重建后也不是同一屏
     // 发送后立刻清掉上一轮思维链，避免误显旧回复的 think；新 token 再由 onStream 写入
     hideThinking();
     renderBg(undefined);

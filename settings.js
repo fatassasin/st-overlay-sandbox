@@ -90,6 +90,11 @@ export const DEFAULT_SETTINGS = {
     plainTextMaxHeight: 16, // 兼容旧 key：底部文本高度（vh），0=无额外底部留白 → --ov-plain-bottom-gap
     pointerNavigation: true, // 左右键导航开关：开=保持当前切楼/切片；关=左右键不导航
     enterAtStFloor: true,   // 点右上角图标进 overlay 时，落到「酒馆里正在看的那一楼」而不是最新楼
+    rememberScroll: true,   // 记住滚动位置：切屏 / 关界面时存下当前这一屏滚到哪儿，下次打开落回同一屏就还原
+    // 存下的那一条滚动位置（不在设置面板里露出；由 reader.js 读写）。
+    // 只存一条：换一屏就顶掉，所以上一屏的偏移自然作废——这正是要的语义，不做多屏历史。
+    // 跟着 ST 落进后端 settings.json，刷新、关浏览器、重启后端都不丢。
+    scrollMemo: null,       // { chatIndex, fragIdx, top } | null
     audioEnabled: true,     // 音频标签（bgm/sfx/voice）总开关
     audioVolume: 80,        // 音频总音量 %
     fullscreen: true,       // 记忆上次全屏开关，open() 时恢复

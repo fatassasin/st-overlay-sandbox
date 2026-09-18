@@ -295,6 +295,7 @@ function buildSettingsPane() {
                 <label class="ov-field"><span>滚轮换楼力度</span><input type="range" id="set-wheelstrength" min="200" max="1400" step="20" /></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-pointernavigation" /><span title="取消后左右键不再切楼层；拖动选择、右键复制、滚轮和楼层按钮不受影响。">左右键切换楼层</span></label>
                 <label class="ov-field checkbox"><input type="checkbox" id="set-enteratstfloor" /><span title="点右上角图标进来时，落在酒馆里正看着的那一楼，而不是直接跳到最新楼。取消后每次都从最新楼开始。">从酒馆当前位置进入</span></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-rememberscroll" /><span title="切楼层或关闭阅读器时记下当前这一屏滚到哪儿，下次打开若正好落在同一屏就还原。只记一条，换一屏就顶掉，上一屏存的位置随之作废。">记住滚动位置</span></label>
                 <div class="ov-row"><span class="ov-hint" title="等效点右上角图标：开/关阅读器。出厂未设置；Ctrl/Cmd+Shift+O 始终可用。">开关阅读器快捷键</span>
                     <button class="ov-btn ghost" id="set-hotkey-toggle" type="button">未设置</button>
                     <button class="ov-btn ghost" id="set-hotkey-toggle-clear" type="button" title="清除">×</button></div>
@@ -419,6 +420,7 @@ function buildSettingsPane() {
     bindRange('#set-wheelstrength', 'wheelStrength', s);
     bindCheckbox('#set-pointernavigation', 'pointerNavigation', s, reflect);
     bindCheckbox('#set-enteratstfloor', 'enterAtStFloor', s);
+    bindCheckbox('#set-rememberscroll', 'rememberScroll', s);
     bindHotkey('#set-hotkey-toggle', '#set-hotkey-toggle-clear', 'hotkeyToggle');
     bindHotkey('#set-hotkey-fullscreen', '#set-hotkey-fullscreen-clear', 'hotkeyFullscreen');
     bindRange('#set-bottomfade', 'bottomFade', s, reflect);
