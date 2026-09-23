@@ -15,6 +15,7 @@
 import { initOverlay, show as showOverlay, hide as hideOverlay, isVisible, q as ovq, getShell } from './overlay.js';
 import { initBridge, refreshOnOpen, clearWaitingOnClose } from './bridge.js';
 import { jumpToChatIndex, hasLiveGeneration, captureScroll, restoreScroll } from './reader.js';
+import { initVideos, scheduleScan as scheduleVideoScan, pauseVideos } from './video.js';
 import * as hk from './hotkey.js';
 import { wireUI, applyCurrentSettings } from './ui.js';
 import { applyInstruction, applyAll } from './parser.js';
@@ -96,6 +97,7 @@ function open(opts = {}) {
     // 落点定下来、外壳也可见了再还原偏移：showOverlay 之前 isVisible() 还是 false，
     // 上面那几趟重建/跳楼里的 captureScroll 都会自行让开，不会反过来把要还原的值冲掉。
     restoreScroll();
+    scheduleVideoScan();   // 同理：隐藏期间 scanVideos 全让开了，露面后补扫一次落点上的视频
     syncLaunchBtn();
     applyChromeState();
     applyKeyButtonState();
@@ -105,6 +107,7 @@ function open(opts = {}) {
 }
 function minimize() {
     captureScroll();          // 趁 overlay 还可见、舞台还没被清，先记下这一屏滚到哪儿
+    pauseVideos();            // 界面藏起来之后视频不该还在后面出声
     clearWaitingOnClose();   // 先清理状态，避免退场动画期间舞台再次变更
     hideOverlay();
     syncLaunchBtn();
@@ -637,6 +640,7 @@ async function main() {
     installConsoleCapture();           // 尽早装日志捕获，收全初始化日志
     initOverlay();
     initIdleDim();
+    initVideos();
     registerKeyButton();
     registerHotkey();
     registerLaunchButton();

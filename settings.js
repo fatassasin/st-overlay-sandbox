@@ -97,6 +97,7 @@ export const DEFAULT_SETTINGS = {
     scrollMemo: null,       // { chatIndex, fragIdx, top } | null
     audioEnabled: true,     // 音频标签（bgm/sfx/voice）总开关
     audioVolume: 80,        // 音频总音量 %
+    videoAutoplay: true,    // 视频滚到眼前自动播一遍（不循环，同一段本次会话只自动起播一次）
     fullscreen: true,       // 记忆上次全屏开关，open() 时恢复
     // 自定义快捷键。出厂空 = 不启用（Ctrl/Cmd+Shift+O 那条内置的不受影响，始终可用）。
     // 存法见 hotkey.js：修饰键在前 + e.code，如 'ctrl+KeyM'。

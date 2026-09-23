@@ -356,6 +356,7 @@ function buildSettingsPane() {
             <div class="ov-collapse-body">
                 <label class="ov-field checkbox"><input type="checkbox" id="set-audioenabled" /><span title="AI 回复里夹 &lt;bgm&gt;/&lt;sfx&gt;/&lt;voice&gt; 标签时播放；切片段触发 sfx/voice，bgm 持续。">启用音频（bgm/sfx/voice）</span></label>
                 <label class="ov-field"><span>音频音量</span><input type="range" id="set-audiovolume" min="0" max="100" step="1" /></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-videoautoplay" /><span title="正文里的视频滚到眼前（露出一半）就自动播放，只播一遍、不循环；同一段视频本次打开酒馆只自动起播一次。页面还没被点过时浏览器不准带声自动播，会先静音播放。">视频滚到时自动播放</span></label>
             </div>
         </details>
         <details class="ov-collapse">
@@ -408,6 +409,7 @@ function buildSettingsPane() {
     // —— 音频 ——
     bindCheckbox('#set-audioenabled', 'audioEnabled', s);
     bindRange('#set-audiovolume', 'audioVolume', s);
+    bindCheckbox('#set-videoautoplay', 'videoAutoplay', s);
 
     // —— 导航 / 界面 ——
     bindCheckbox('#set-showfloormeta', 'showFloorMeta', s, () => {
