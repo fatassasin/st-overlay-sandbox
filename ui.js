@@ -18,6 +18,7 @@ import { setTestImage, getTestImage, slotKeyFor, placeholderLabel } from './asse
 import { parseStageMessage } from './stage-parser.js';
 import { applyIdleDim } from './idle-dim.js';
 import * as hk from './hotkey.js';
+import { isRemoteClient, onDeviceChange, physicalScreen } from './device.js';
 
 // —— 外观预设映射 ——
 const FONT_STACKS = {
@@ -49,6 +50,15 @@ let _onInject = null;
 let _onChrome = null;
 let _onMacro = null;
 
+// —— 电脑 / 手机远程两套字号与正文宽度（判据见 device.js）——
+// 只有这两项分两套，其余外观两边共用。开关关掉时两边都用电脑那套。
+const PROFILE_KEYS = { fontSize: 'remoteFontSize', panelWidth: 'remotePanelWidth' };
+const REMOTE_FONT_MAX = 32;   // 手机上可能想要更大的字，远程这根滑条比电脑那根放宽
+function remoteActive() { return !!getSetting('remoteProfile') && isRemoteClient(); }
+/** 此刻生效的那一套里，key 实际存在哪个设置项。 */
+function profileKey(key) { return remoteActive() && PROFILE_KEYS[key] ? PROFILE_KEYS[key] : key; }
+function profileValue(s, key) { return s[profileKey(key)] ?? s[key]; }
+
 /** 把任意 CSS 颜色规约成 #rrggbb（<input type=color> 只认 hex）。失败回退灰。 */
 function toHexColor(c) {
     try {
@@ -72,14 +82,14 @@ export function applyCurrentSettings() {
     if (!root) return;
     const s = getSettings();
     root.style.setProperty('--ov-font-family', FONT_STACKS[s.fontFamily] || FONT_STACKS.serif);
-    root.style.setProperty('--ov-font-size', `${s.fontSize || 17}px`);
+    root.style.setProperty('--ov-font-size', `${profileValue(s, 'fontSize') || 17}px`);
     root.style.setProperty('--ov-line-height', String(s.lineHeight || 1.8));
     const sp = SPACING[s.spacing] || SPACING.cozy;
     root.style.setProperty('--ov-panel-pad', sp.pad);
     root.style.setProperty('--ov-panel-pad-x', sp.padX);
     root.style.setProperty('--ov-frag-gap', sp.gap);
     // 面板宽：屏幕宽度百分比
-    const pw = Number(s.panelWidth);
+    const pw = Number(profileValue(s, 'panelWidth'));
     root.style.setProperty('--ov-panel-width', `${Number.isFinite(pw) ? Math.max(30, Math.min(100, pw)) : 70}%`);
     const sc = SCHEMES[s.scheme] || SCHEMES.mono;
     root.style.setProperty('--ov-accent', sc.accent);
@@ -260,10 +270,19 @@ function buildSettingsPane() {
                     <select id="set-font" class="ov-select">
                         <option value="serif">叙事衬线</option><option value="cn-serif">中文宋体</option><option value="kai">文楷 / 楷体</option><option value="sans">清爽无衬线</option><option value="rounded">圆润屏显</option><option value="mono">等宽</option>
                     </select></label>
-                <label class="ov-field"><span>字号</span><input type="range" id="set-fontsize" min="13" max="26" step="1" /></label>
+                <label class="ov-field"><span>字号</span><input type="range" id="set-fontsize" min="13" max="26" step="1" /><span class="ov-hint-inline" data-profile-tag></span></label>
                 <label class="ov-field"><span>行高</span><input type="range" id="set-lineheight" min="1.3" max="2.4" step="0.1" /></label>
                 <div class="ov-seg" id="set-spacing"><button type="button" data-v="compact">紧凑</button><button type="button" data-v="cozy">适中</button><button type="button" data-v="roomy">宽松</button></div>
-                <label class="ov-field"><span>正文宽度</span><input type="range" id="set-panelwidth" min="30" max="100" step="1" /></label>
+                <label class="ov-field"><span>正文宽度</span><input type="range" id="set-panelwidth" min="30" max="100" step="1" /><span class="ov-hint-inline" data-profile-tag></span></label>
+            </div>
+        </details>
+        <details class="ov-collapse" open>
+            <summary class="ov-collapse-head" title="手机/平板经 UU 远程连进来时，换用一套独立的字号与正文宽度；回到电脑前自动换回，两套互不影响。"><span class="ov-collapse-caret">▾</span>手机远程</summary>
+            <div class="ov-collapse-body">
+                <label class="ov-field checkbox"><input type="checkbox" id="set-remoteprofile" /><span title="按主屏物理分辨率判断：UU 远程推流时主屏会换成按客户端造的 1920×1080 虚拟屏，本机是 4K。不大于 1080p 就当是手机远程。低分辨率笔记本远程进来也会被当成手机。">远程时自动换用下面这套</span></label>
+                <label class="ov-field"><span>远程字号</span><input type="range" id="set-remotefontsize" min="13" max="${REMOTE_FONT_MAX}" step="1" /></label>
+                <label class="ov-field"><span>远程正文宽度</span><input type="range" id="set-remotepanelwidth" min="30" max="100" step="1" /></label>
+                <div class="ov-hint" id="set-remote-status"></div>
             </div>
         </details>
         <details class="ov-collapse">
@@ -395,10 +414,16 @@ function buildSettingsPane() {
     twspeedLabel();
     twspeedLabel('#set-twspeedvn-v', 'typewriterSpeedVn');
     bindSelect('#set-font', 'fontFamily', s, reflect);
-    bindRange('#set-fontsize', 'fontSize', s, reflect);
+    bindProfileRange('#set-fontsize', 'fontSize');
     bindRange('#set-lineheight', 'lineHeight', s, reflect);
     bindSeg('#set-spacing', 'spacing', s, reflect);
-    bindRange('#set-panelwidth', 'panelWidth', s, reflect);
+    bindProfileRange('#set-panelwidth', 'panelWidth');
+    // —— 手机远程那一套 ——
+    const reprofile = () => { applyCurrentSettings(); syncProfileUI(); };
+    bindCheckbox('#set-remoteprofile', 'remoteProfile', s, reprofile);
+    bindRange('#set-remotefontsize', 'remoteFontSize', s, reprofile);
+    bindRange('#set-remotepanelwidth', 'remotePanelWidth', s, reprofile);
+    syncProfileUI();
     bindSeg('#set-scheme', 'scheme', s, reflect);
     bindSeg('#set-lighting', 'lighting', s, reflect);
     bindRange('#set-panelplate', 'panelPlate', s, applyCurrentSettings);
@@ -1284,6 +1309,40 @@ function bindSeg(sel, key, s, after) {
 function flash(el, msg, restore) { const o = el.textContent; el.textContent = msg; setTimeout(() => (el.textContent = restore ?? o), 1400); }
 
 /**
+ * 「字体与间距」里的字号/正文宽度：写到此刻生效的那一套。人在手机上拖这两根滑条，
+ * 调的就是远程那套，不会动到电脑前的设定。
+ */
+function bindProfileRange(sel, key) {
+    const el = q(sel); if (!el) return;
+    el.addEventListener('input', () => { setSetting(profileKey(key), Number(el.value)); applyCurrentSettings(); syncProfileUI(); });
+}
+
+/** 两套滑条的取值、「远程」标记、当前判定提示，按此刻的判定重新对一遍。 */
+function syncProfileUI() {
+    const s = getSettings();
+    const remote = remoteActive();
+    const fs = q('#set-fontsize');
+    if (fs) { fs.max = String(remote ? REMOTE_FONT_MAX : 26); fs.value = String(profileValue(s, 'fontSize')); }
+    const pw = q('#set-panelwidth');
+    if (pw) pw.value = String(profileValue(s, 'panelWidth'));
+    const rf = q('#set-remotefontsize');
+    if (rf) rf.value = String(s.remoteFontSize ?? s.fontSize);
+    const rp = q('#set-remotepanelwidth');
+    if (rp) rp.value = String(s.remotePanelWidth ?? s.panelWidth);
+    qAll('[data-profile-tag]').forEach((el) => { el.textContent = remote ? '远程' : ''; });
+    const st = q('#set-remote-status');
+    if (st) {
+        const p = physicalScreen();
+        const size = p ? `${p.w}×${p.h}` : '未知';
+        st.textContent = !s.remoteProfile
+            ? `已关闭：电脑与远程都用「字体与间距」那套（主屏 ${size}）`
+            : isRemoteClient()
+                ? `此刻判定：手机远程（主屏 ${size}），正在用这一套`
+                : `此刻判定：电脑前（主屏 ${size}），这一套待命中`;
+    }
+}
+
+/**
  * 装配 UI。需在 initOverlay() 之后调用。
  * @param {{onInjectProtocolChange?:(b:boolean)=>void}} opts
  */
@@ -1301,6 +1360,8 @@ export function wireUI(opts = {}) {
     applyComposerArrow();
     activateTab('settings');
     applyCurrentSettings();
+    // 电脑 ↔ 手机远程一翻转就换那两项（远程连上 / 断开时主屏整块换掉）；尺寸变了也刷新提示里的分辨率
+    onDeviceChange(() => { applyCurrentSettings(); syncProfileUI(); });
     // 点空白关文件夹菜单
     if (!wireUI._folderMenuBound) {
         wireUI._folderMenuBound = true;

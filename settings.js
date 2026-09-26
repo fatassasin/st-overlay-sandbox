@@ -27,6 +27,11 @@ export const DEFAULT_SETTINGS = {
     lineHeight: 1.7,        // 行高 → --ov-line-height
     spacing: 'cozy',        // 界面间距预设 'compact' | 'cozy' | 'roomy' → 内距/片段间距
     panelWidth: 91,         // 正文面板宽度，占屏幕宽度百分比 → --ov-panel-width
+    // 远程专用的一套字号/正文宽度（判据见 device.js）。开关开且判定为远程时，上面两项让位给这两项；
+    // 回到电脑前自动换回来，两套互不影响。null = 还没用过，loadSettings() 按电脑那套抄一份起步。
+    remoteProfile: true,    // 按「电脑前 / 手机远程」自动切换字号与正文宽度
+    remoteFontSize: null,   // 远程时的正文字号 px
+    remotePanelWidth: null, // 远程时的正文宽度 %
     scheme: 'mono',         // 配色（黑底内的强调色）'mono' | 'amber' | 'jade' | 'rose'
     followTextColor: true,  // 正文跟随 SillyTavern 主题变量
     followEmphasisColor: true, // 粗体跟随 SillyTavern 主题变量
@@ -187,6 +192,10 @@ export function loadSettings() {
             store[key] = DEFAULT_SETTINGS[key];
         }
     }
+    // 远程那套第一次用时从电脑这套起步：开关出厂就是开的，拿出厂 19px 起步的话，
+    // 调过字号的人一连远程就会看到字号突然变了。
+    if (store.remoteFontSize === null) { store.remoteFontSize = store.fontSize; migrated = true; }
+    if (store.remotePanelWidth === null) { store.remotePanelWidth = store.panelWidth; migrated = true; }
     _loaded = true;
     if (migrated) save();
     return store;
