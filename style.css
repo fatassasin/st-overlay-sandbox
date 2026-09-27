@@ -30,9 +30,15 @@
 #st-overlay-root [hidden] { display: none !important; }
 
 /* ===== 全屏根容器 + 可调变量 ===== */
+/* 尺寸写死成视口，不靠 inset:0 撑。ST 的 style.css 给 html 挂了 transform: translateZ(0)，
+   于是 fixed 的包含块是 <html> 而不是视口；窄于 1000px 时 ST 的移动端样式又把 body 设成 fixed，
+   <html> 高度塌成 0——inset:0 跟着塌成 0 高，竖屏远程（622 宽）整个 overlay 看不见，露出底下的酒馆。 */
 #st-overlay-root {
     position: fixed;
     inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     z-index: 4000;
     display: flex;
     visibility: hidden;
@@ -775,24 +781,39 @@
 }
 /* 唤起后只有胶囊可点，横条仍然穿透 */
 #st-overlay-root .ov-window[data-composer="auto"].ov-composer-show .ov-composer-inner { pointer-events: auto; }
+/* 输入框缩放 --ov-ck（composerScale / 100）逐项乘在字号、按钮、内距上。不用 transform: scale：
+   它只改画面不改占位，放大后胶囊会溢出横条，缩小后两侧又空出一截对不齐。 */
 #st-overlay-root .ov-composer-inner {
     max-width: var(--ov-panel-width); margin: 0 auto;
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 8px 8px 16px;
-    border-radius: 18px; border: 1px solid var(--ov-stroke);
+    display: flex; align-items: center; gap: calc(10px * var(--ov-ck, 1));
+    padding: calc(8px * var(--ov-ck, 1)) calc(8px * var(--ov-ck, 1)) calc(8px * var(--ov-ck, 1)) calc(16px * var(--ov-ck, 1));
+    border-radius: calc(18px * var(--ov-ck, 1)); border: 1px solid var(--ov-stroke);
     background: var(--ov-glass-strong);
     box-shadow: 0 6px 22px rgba(0,0,0,0.4);
     transition: border-color 0.15s ease;
 }
+/* 设了独立的输入框宽度：宽度改由横条两侧留白决定（按屏宽算，100% 时只剩 6px 边），
+   胶囊不再受正文宽度限制——竖屏上正文可以留边，输入框照样贴满。 */
+#st-overlay-root[data-composer-width="set"] .ov-composer {
+    padding-left: var(--ov-composer-side); padding-right: var(--ov-composer-side);
+}
+#st-overlay-root[data-composer-width="set"] .ov-composer-inner { max-width: none; }
 #st-overlay-root .ov-composer-inner:focus-within { border-color: rgba(255,255,255,0.28); }
 #st-overlay-root .ov-input {
     flex: 1 1 auto; border: none; outline: none; background: transparent;
-    color: #e7e7ea; font-family: inherit; font-size: 14.5px; line-height: 1.5;
-    resize: none; max-height: 160px; min-height: 24px;
+    color: #e7e7ea; font-family: inherit; font-size: calc(14.5px * var(--ov-ck, 1)); line-height: 1.5;
+    resize: none; max-height: calc(160px * var(--ov-ck, 1)); min-height: calc(24px * var(--ov-ck, 1));
     /* 单行时与 42px 按钮垂直居中；多行时仍可长高 */
-    padding: 9px 0;
+    padding: calc(9px * var(--ov-ck, 1)) 0;
     box-sizing: border-box;
 }
+/* ST 在触屏上给所有 textarea 钉了 16px !important（防 iOS 聚焦放大），会把缩放吃掉。
+   这里保住 16px 下限，往上照样跟着缩放走。 */
+@media (pointer: coarse) {
+    #st-overlay-root .ov-input { font-size: max(16px, calc(14.5px * var(--ov-ck, 1))) !important; }
+}
+/* 竖屏窄框再放大时占位提示会折成两行、下半行被裁掉；空着时只留一行，打字后照常换行。 */
+#st-overlay-root .ov-input:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #st-overlay-root .ov-input::placeholder {
     color: var(--ov-muted);
     /* 避免某些字体/浏览器把 placeholder 基线压低 */
@@ -800,9 +821,9 @@
     vertical-align: middle;
 }
 #st-overlay-root .ov-send, #st-overlay-root .ov-stop {
-    flex: 0 0 auto; width: 42px; height: 42px; border-radius: 13px; cursor: pointer;
+    flex: 0 0 auto; width: calc(42px * var(--ov-ck, 1)); height: calc(42px * var(--ov-ck, 1)); border-radius: calc(13px * var(--ov-ck, 1)); cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 15px; color: #e7e7ea; border: 1px solid var(--ov-stroke);
+    font-size: calc(15px * var(--ov-ck, 1)); color: #e7e7ea; border: 1px solid var(--ov-stroke);
     background: rgba(255,255,255,0.05); transition: background 0.15s ease, border-color 0.15s ease;
 }
 #st-overlay-root .ov-send:hover, #st-overlay-root .ov-stop:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.26); }
@@ -1139,7 +1160,8 @@
 #st-overlay-root .ov-key-button.ov-dragging { cursor: grabbing; opacity: 0.8; }
 #st-overlay-root .ov-key-button.ov-key-online { border-color: rgba(86,211,133,0.65); }
 #st-overlay-root .ov-key-button.ov-key-error { border-color: rgba(255,101,101,0.75); }
-#st-overlay-root .ov-key-button.ov-key-docked { position: static; flex: 0 0 40px; border: none; background: transparent; box-shadow: none; }
+#st-overlay-root .ov-key-button.ov-key-docked { position: static; flex: 0 0 calc(40px * var(--ov-ck, 1)); width: calc(40px * var(--ov-ck, 1)); min-width: 0; height: calc(40px * var(--ov-ck, 1)); border: none; background: transparent; box-shadow: none; }
+#st-overlay-root .ov-key-button.ov-key-docked i { font-size: calc(14px * var(--ov-ck, 1)); }
 #st-overlay-root .ov-key-button.ov-key-docked:hover { border: none; background: transparent; }
 #st-overlay-root #set-keybutton-status[data-state="online"] { color: #72dc9b; }
 #st-overlay-root #set-keybutton-status[data-state="error"] { color: #ff8585; }

@@ -8,6 +8,9 @@
 // （远程时 1097 × 1.75 = 1919.75），所以留 16px 余量吸收换算误差。
 // 已知误判：1366×768 那类笔记本远程连过来，虚拟屏同样是 1920×1080，会被当成手机。
 //
+// 竖屏另算：手机竖着拿时虚拟屏是 1244×2160 @200%——高 2160 超过 1080p，光看尺寸会被当成电脑。
+// 所以「高大于宽」一律算远程。代价是：电脑要是接了一块竖放的主屏，也会被当成手机。
+//
 // 换设备时 resize / screen change 不保证每次都到，所以另外每 3 秒重读一次兜底，代价只是两次乘法。
 
 const DESKTOP_W = 1920;
@@ -28,9 +31,16 @@ export function physicalScreen() {
     return { w: Math.round(s.width * dpr), h: Math.round(s.height * dpr) };
 }
 
+/** 主屏物理尺寸写成 'WxH'（按分辨率存方案用的键）；读不到返回 ''。 */
+export function screenKey() {
+    const p = physicalScreen();
+    return p ? `${p.w}x${p.h}` : '';
+}
+
 function detect() {
     const p = physicalScreen();
     if (!p) return _remote;   // 读不到就维持上一次的结论
+    if (p.h > p.w) return true;
     return !(p.w > DESKTOP_W + SLACK || p.h > DESKTOP_H + SLACK);
 }
 

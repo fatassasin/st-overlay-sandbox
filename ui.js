@@ -18,7 +18,7 @@ import { setTestImage, getTestImage, slotKeyFor, placeholderLabel } from './asse
 import { parseStageMessage } from './stage-parser.js';
 import { applyIdleDim } from './idle-dim.js';
 import * as hk from './hotkey.js';
-import { isRemoteClient, onDeviceChange, physicalScreen } from './device.js';
+import { isRemoteClient, onDeviceChange, physicalScreen, screenKey } from './device.js';
 
 // —— 外观预设映射 ——
 const FONT_STACKS = {
@@ -50,14 +50,41 @@ let _onInject = null;
 let _onChrome = null;
 let _onMacro = null;
 
-// —— 电脑 / 手机远程两套字号与正文宽度（判据见 device.js）——
-// 只有这两项分两套，其余外观两边共用。开关关掉时两边都用电脑那套。
-const PROFILE_KEYS = { fontSize: 'remoteFontSize', panelWidth: 'remotePanelWidth' };
-const REMOTE_FONT_MAX = 32;   // 手机上可能想要更大的字，远程这根滑条比电脑那根放宽
-function remoteActive() { return !!getSetting('remoteProfile') && isRemoteClient(); }
-/** 此刻生效的那一套里，key 实际存在哪个设置项。 */
-function profileKey(key) { return remoteActive() && PROFILE_KEYS[key] ? PROFILE_KEYS[key] : key; }
-function profileValue(s, key) { return s[profileKey(key)] ?? s[key]; }
+// —— 按主屏分辨率分方案（判据见 device.js，存法见 settings.js 的 screenProfiles）——
+// 方案 id：'' = 电脑前，也就是设置顶层那几项；否则是远程屏的物理分辨率 'WxH'。
+// 只有这四项分方案，其余外观各方案共用。开关关掉时一律用电脑那套。
+const SCHEME_KEYS = ['fontSize', 'panelWidth', 'composerWidth', 'composerScale'];
+const REMOTE_FONT_MAX = 32;   // 手机上可能想要更大的字，远程方案的字号滑条比电脑那根放宽
+function activeSchemeId() { return getSetting('remoteProfile') && isRemoteClient() ? screenKey() : ''; }
+function isPortraitId(id) { const [w, h] = String(id).split('x').map(Number); return h > w; }
+function schemeLabel(id) {
+    if (!id) return '电脑前';
+    const [w, h] = id.split('x');
+    return `${isPortraitId(id) ? '手机竖屏' : '手机横屏'} ${w}×${h}`;
+}
+/**
+ * 某个分辨率还没存过方案时的起步值。横屏照抄电脑那套；竖屏先找别的竖屏方案抄，
+ * 没有就沿用远程方案的字号、正文和输入框宽度拉满——竖屏本来就窄，再留边就太挤了。
+ */
+function schemeSeed(id, s) {
+    const base = Object.fromEntries(SCHEME_KEYS.map((k) => [k, s[k]]));
+    if (!id || !isPortraitId(id)) return base;
+    const profiles = s.screenProfiles || {};
+    const portrait = Object.keys(profiles).find((k) => k !== id && isPortraitId(k));
+    if (portrait) return { ...base, ...profiles[portrait] };
+    const other = Object.values(profiles)[0];
+    return { ...base, fontSize: other?.fontSize ?? base.fontSize, panelWidth: 100, composerWidth: 100 };
+}
+function schemeValues(id, s = getSettings()) {
+    if (!id) return schemeSeed('', s);
+    return { ...schemeSeed(id, s), ...(s.screenProfiles?.[id] || {}) };
+}
+/** 改某个方案的一项。远程方案第一次被改时把起步值整份落盘，之后电脑那套再变也不会带着它走。 */
+function setSchemeValue(id, key, value) {
+    if (!id) { setSetting(key, value); return; }
+    const s = getSettings();
+    setSetting('screenProfiles', { ...(s.screenProfiles || {}), [id]: { ...schemeValues(id, s), [key]: value } });
+}
 
 /** 把任意 CSS 颜色规约成 #rrggbb（<input type=color> 只认 hex）。失败回退灰。 */
 function toHexColor(c) {
@@ -81,16 +108,23 @@ export function applyCurrentSettings() {
     const root = getRoot();
     if (!root) return;
     const s = getSettings();
+    const sv = schemeValues(activeSchemeId(), s);
     root.style.setProperty('--ov-font-family', FONT_STACKS[s.fontFamily] || FONT_STACKS.serif);
-    root.style.setProperty('--ov-font-size', `${profileValue(s, 'fontSize') || 17}px`);
+    root.style.setProperty('--ov-font-size', `${sv.fontSize || 17}px`);
     root.style.setProperty('--ov-line-height', String(s.lineHeight || 1.8));
     const sp = SPACING[s.spacing] || SPACING.cozy;
     root.style.setProperty('--ov-panel-pad', sp.pad);
     root.style.setProperty('--ov-panel-pad-x', sp.padX);
     root.style.setProperty('--ov-frag-gap', sp.gap);
     // 面板宽：屏幕宽度百分比
-    const pw = Number(profileValue(s, 'panelWidth'));
+    const pw = Number(sv.panelWidth);
     root.style.setProperty('--ov-panel-width', `${Number.isFinite(pw) ? Math.max(30, Math.min(100, pw)) : 70}%`);
+    // 输入框：宽度按屏宽百分比算两侧留白（100 = 只剩 6px 边），没设就沿用旧版式跟着正文宽度走
+    const cw = sv.composerWidth == null ? NaN : Number(sv.composerWidth);
+    root.dataset.composerWidth = Number.isFinite(cw) ? 'set' : 'follow';
+    root.style.setProperty('--ov-composer-side', Number.isFinite(cw) ? `max(6px, ${(100 - Math.max(30, Math.min(100, cw))) / 2}%)` : '0px');
+    const ck = (Number(sv.composerScale) || 100) / 100;
+    root.style.setProperty('--ov-ck', String(Math.max(0.6, Math.min(1.8, ck))));
     const sc = SCHEMES[s.scheme] || SCHEMES.mono;
     root.style.setProperty('--ov-accent', sc.accent);
     root.style.setProperty('--ov-accent-2', sc.accent2);
@@ -277,12 +311,17 @@ function buildSettingsPane() {
             </div>
         </details>
         <details class="ov-collapse" open>
-            <summary class="ov-collapse-head" title="手机/平板经 UU 远程连进来时，换用一套独立的字号与正文宽度；回到电脑前自动换回，两套互不影响。"><span class="ov-collapse-caret">▾</span>手机远程</summary>
+            <summary class="ov-collapse-head" title="每个远程分辨率一套独立的字号、正文宽度和输入框；手机横竖屏是两个分辨率，所以各管各的。回到电脑前自动换回，互不影响。"><span class="ov-collapse-caret">▾</span>分辨率方案</summary>
             <div class="ov-collapse-body">
-                <label class="ov-field checkbox"><input type="checkbox" id="set-remoteprofile" /><span title="按主屏物理分辨率判断：UU 远程推流时主屏会换成按客户端造的 1920×1080 虚拟屏，本机是 4K。不大于 1080p 就当是手机远程。低分辨率笔记本远程进来也会被当成手机。">远程时自动换用下面这套</span></label>
-                <label class="ov-field"><span>远程字号</span><input type="range" id="set-remotefontsize" min="13" max="${REMOTE_FONT_MAX}" step="1" /></label>
-                <label class="ov-field"><span>远程正文宽度</span><input type="range" id="set-remotepanelwidth" min="30" max="100" step="1" /></label>
+                <label class="ov-field checkbox"><input type="checkbox" id="set-remoteprofile" /><span title="按主屏物理分辨率判断：UU 远程推流时主屏会换成按手机造的虚拟屏（横屏 1920×1080、竖屏 1244×2160 这类），本机是 4K。不大于 1080p、或者高大于宽，就当是手机远程。低分辨率笔记本远程进来也会被当成手机。">远程时按分辨率自动换方案</span></label>
                 <div class="ov-hint" id="set-remote-status"></div>
+                <label class="ov-field"><span>编辑方案</span><select id="set-scheme-pick" class="ov-select"></select></label>
+                <label class="ov-field"><span>字号</span><input type="range" id="set-sch-fontsize" min="13" max="${REMOTE_FONT_MAX}" step="1" /></label>
+                <label class="ov-field"><span>正文宽度</span><input type="range" id="set-sch-panelwidth" min="30" max="100" step="1" /></label>
+                <label class="ov-field"><span title="占屏幕宽度的百分比，100 = 贴满屏宽（两侧各留 6px）。">输入框宽度</span><input type="range" id="set-sch-composerwidth" min="30" max="100" step="1" /></label>
+                <label class="ov-field"><span title="输入框里的字、按钮和内距一起缩放。">输入框缩放</span><input type="range" id="set-sch-composerscale" min="60" max="180" step="5" /></label>
+                <div class="ov-hint" id="set-sch-note"></div>
+                <div class="ov-row"><button class="ov-btn ghost" id="set-sch-follow" type="button">输入框跟随正文宽度</button><button class="ov-btn ghost" id="set-sch-delete" type="button">删除这套</button></div>
             </div>
         </details>
         <details class="ov-collapse">
@@ -418,11 +457,10 @@ function buildSettingsPane() {
     bindRange('#set-lineheight', 'lineHeight', s, reflect);
     bindSeg('#set-spacing', 'spacing', s, reflect);
     bindProfileRange('#set-panelwidth', 'panelWidth');
-    // —— 手机远程那一套 ——
+    // —— 分辨率方案 ——
     const reprofile = () => { applyCurrentSettings(); syncProfileUI(); };
     bindCheckbox('#set-remoteprofile', 'remoteProfile', s, reprofile);
-    bindRange('#set-remotefontsize', 'remoteFontSize', s, reprofile);
-    bindRange('#set-remotepanelwidth', 'remotePanelWidth', s, reprofile);
+    wireSchemeEditor();
     syncProfileUI();
     bindSeg('#set-scheme', 'scheme', s, reflect);
     bindSeg('#set-lighting', 'lighting', s, reflect);
@@ -677,6 +715,7 @@ function buildSettingsPane() {
 // 滑条右侧数值的单位（纯展示；聚焦编辑时只留数字）。没列的就不带单位。
 const RANGE_UNITS = {
     'set-fontsize': 'px', 'set-panelwidth': '%',
+    'set-sch-fontsize': 'px', 'set-sch-panelwidth': '%', 'set-sch-composerwidth': '%', 'set-sch-composerscale': '%',
     'set-textbgopacity': '%', 'set-textbrightness': '%', 'set-textcontrast': '%',
     'set-panelplate': '%',
     'set-backgroundglow-brightness': '%', 'set-audiovolume': '%',
@@ -707,6 +746,8 @@ function wireRangeNumbers(scope) {
         const show = () => { box.value = `${range.value}${unit}`; };
         show();
         range.addEventListener('input', show);
+        // 代码里直接改 range.value 不会触发 input；改完派发这个事件让数字跟上（见 setRangeValue）
+        range.addEventListener('ov-sync', show);
 
         box.addEventListener('focus', () => { box.value = range.value; box.select(); });
         // 数值框在 <label class="ov-field"> 里，而该 label 的隐式控件是滑条本身；
@@ -1308,38 +1349,109 @@ function bindSeg(sel, key, s, after) {
 }
 function flash(el, msg, restore) { const o = el.textContent; el.textContent = msg; setTimeout(() => (el.textContent = restore ?? o), 1400); }
 
+/** 代码里改滑条的值：顺带让右侧数字框跟上（它只听 input，而 input 会触发写设置）。 */
+function setRangeValue(el, v) {
+    if (!el) return;
+    el.value = String(v);
+    el.dispatchEvent(new Event('ov-sync'));
+}
+
 /**
- * 「字体与间距」里的字号/正文宽度：写到此刻生效的那一套。人在手机上拖这两根滑条，
- * 调的就是远程那套，不会动到电脑前的设定。
+ * 「字体与间距」里的字号/正文宽度：写到此刻生效的那一套。人在手机竖屏上拖这两根滑条，
+ * 调的就是竖屏那套，不会动到电脑前和横屏的设定。
  */
 function bindProfileRange(sel, key) {
     const el = q(sel); if (!el) return;
-    el.addEventListener('input', () => { setSetting(profileKey(key), Number(el.value)); applyCurrentSettings(); syncProfileUI(); });
+    el.addEventListener('input', () => { setSchemeValue(activeSchemeId(), key, Number(el.value)); applyCurrentSettings(); syncProfileUI(); });
 }
 
-/** 两套滑条的取值、「远程」标记、当前判定提示，按此刻的判定重新对一遍。 */
+// 「分辨率方案」里正在编辑哪一套。null = 跟着此刻生效的那套走；换了屏幕就回到 null。
+let _pickedScheme = null;
+function pickedSchemeId() { return _pickedScheme ?? activeSchemeId(); }
+
+function wireSchemeEditor() {
+    const pick = q('#set-scheme-pick');
+    pick?.addEventListener('change', () => { _pickedScheme = pick.value; syncProfileUI(); });
+    const bind = (sel, key) => q(sel)?.addEventListener('input', (e) => {
+        setSchemeValue(pickedSchemeId(), key, Number(e.target.value));
+        applyCurrentSettings(); syncProfileUI();
+    });
+    bind('#set-sch-fontsize', 'fontSize');
+    bind('#set-sch-panelwidth', 'panelWidth');
+    bind('#set-sch-composerwidth', 'composerWidth');
+    bind('#set-sch-composerscale', 'composerScale');
+    q('#set-sch-follow')?.addEventListener('click', () => {
+        setSchemeValue(pickedSchemeId(), 'composerWidth', null);
+        applyCurrentSettings(); syncProfileUI();
+    });
+    q('#set-sch-delete')?.addEventListener('click', () => {
+        const id = pickedSchemeId();
+        const profiles = { ...(getSetting('screenProfiles') || {}) };
+        if (!id || !profiles[id]) return;
+        delete profiles[id];
+        setSetting('screenProfiles', profiles);
+        _pickedScheme = null;
+        applyCurrentSettings(); syncProfileUI();
+    });
+}
+
+/** 两处滑条的取值、方案标记、当前判定提示，按此刻的判定重新对一遍。 */
 function syncProfileUI() {
     const s = getSettings();
-    const remote = remoteActive();
+    const active = activeSchemeId();
+    const live = schemeValues(active, s);
     const fs = q('#set-fontsize');
-    if (fs) { fs.max = String(remote ? REMOTE_FONT_MAX : 26); fs.value = String(profileValue(s, 'fontSize')); }
-    const pw = q('#set-panelwidth');
-    if (pw) pw.value = String(profileValue(s, 'panelWidth'));
-    const rf = q('#set-remotefontsize');
-    if (rf) rf.value = String(s.remoteFontSize ?? s.fontSize);
-    const rp = q('#set-remotepanelwidth');
-    if (rp) rp.value = String(s.remotePanelWidth ?? s.panelWidth);
-    qAll('[data-profile-tag]').forEach((el) => { el.textContent = remote ? '远程' : ''; });
+    if (fs) { fs.max = String(active ? REMOTE_FONT_MAX : 26); setRangeValue(fs, live.fontSize); }
+    setRangeValue(q('#set-panelwidth'), live.panelWidth);
+    const tag = active ? (isPortraitId(active) ? '竖屏' : '横屏') : '';
+    qAll('[data-profile-tag]').forEach((el) => { el.textContent = tag; });
+
     const st = q('#set-remote-status');
     if (st) {
         const p = physicalScreen();
         const size = p ? `${p.w}×${p.h}` : '未知';
         st.textContent = !s.remoteProfile
-            ? `已关闭：电脑与远程都用「字体与间距」那套（主屏 ${size}）`
-            : isRemoteClient()
-                ? `此刻判定：手机远程（主屏 ${size}），正在用这一套`
-                : `此刻判定：电脑前（主屏 ${size}），这一套待命中`;
+            ? `已关闭：一律用电脑那套（主屏 ${size}）`
+            : active
+                ? `此刻判定：${schemeLabel(active)}，正在用这一套`
+                : `此刻判定：电脑前（主屏 ${size}）`;
     }
+
+    // 方案列表：电脑前 + 存过的 + 此刻这台还没存过的远程屏
+    const stored = Object.keys(s.screenProfiles || {});
+    const ids = ['', ...stored.sort()];
+    if (active && !stored.includes(active)) ids.push(active);
+    if (_pickedScheme !== null && !ids.includes(_pickedScheme)) _pickedScheme = null;
+    const picked = pickedSchemeId();
+    const pick = q('#set-scheme-pick');
+    if (pick) {
+        pick.replaceChildren(...ids.map((id) => {
+            const o = document.createElement('option');
+            o.value = id;
+            o.textContent = schemeLabel(id) + (id === active ? '（此刻在用）' : '');
+            return o;
+        }));
+        pick.value = picked;
+    }
+    const v = schemeValues(picked, s);
+    const sf = q('#set-sch-fontsize');
+    if (sf) { sf.max = String(picked ? REMOTE_FONT_MAX : 26); setRangeValue(sf, v.fontSize); }
+    setRangeValue(q('#set-sch-panelwidth'), v.panelWidth);
+    const following = v.composerWidth == null;
+    setRangeValue(q('#set-sch-composerwidth'), following ? v.panelWidth : v.composerWidth);
+    setRangeValue(q('#set-sch-composerscale'), v.composerScale ?? 100);
+    const note = q('#set-sch-note');
+    if (note) {
+        const bits = [];
+        if (following) bits.push('输入框宽度此刻跟随正文宽度，拖一下就改成独立设定');
+        if (picked && !stored.includes(picked)) bits.push('这台屏还没改过，显示的是起步值');
+        note.textContent = bits.join('；');
+        note.hidden = !bits.length;
+    }
+    const follow = q('#set-sch-follow');
+    if (follow) follow.disabled = following;
+    const del = q('#set-sch-delete');
+    if (del) del.disabled = !picked || !stored.includes(picked);
 }
 
 /**
@@ -1361,7 +1473,7 @@ export function wireUI(opts = {}) {
     activateTab('settings');
     applyCurrentSettings();
     // 电脑 ↔ 手机远程一翻转就换那两项（远程连上 / 断开时主屏整块换掉）；尺寸变了也刷新提示里的分辨率
-    onDeviceChange(() => { applyCurrentSettings(); syncProfileUI(); });
+    onDeviceChange(() => { _pickedScheme = null; applyCurrentSettings(); syncProfileUI(); });
     // 点空白关文件夹菜单
     if (!wireUI._folderMenuBound) {
         wireUI._folderMenuBound = true;

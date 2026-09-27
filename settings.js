@@ -27,11 +27,14 @@ export const DEFAULT_SETTINGS = {
     lineHeight: 1.7,        // 行高 → --ov-line-height
     spacing: 'cozy',        // 界面间距预设 'compact' | 'cozy' | 'roomy' → 内距/片段间距
     panelWidth: 91,         // 正文面板宽度，占屏幕宽度百分比 → --ov-panel-width
-    // 远程专用的一套字号/正文宽度（判据见 device.js）。开关开且判定为远程时，上面两项让位给这两项；
-    // 回到电脑前自动换回来，两套互不影响。null = 还没用过，loadSettings() 按电脑那套抄一份起步。
-    remoteProfile: true,    // 按「电脑前 / 手机远程」自动切换字号与正文宽度
-    remoteFontSize: null,   // 远程时的正文字号 px
-    remotePanelWidth: null, // 远程时的正文宽度 %
+    composerWidth: null,    // 输入框宽度，占屏幕宽度百分比（上限 100 = 贴满屏宽）；null = 跟随正文宽度
+    composerScale: 100,     // 输入框整体缩放 %（字、按钮、内距一起缩放）→ --ov-ck
+    // 按主屏分辨率分方案（判据见 device.js）。开关开且判定为远程时，上面四项（字号、正文宽度、
+    // 输入框宽度、输入框缩放）换成这台远程屏自己的那一套；回到电脑前换回上面四项，互不影响。
+    // 键是物理分辨率 'WxH'，同一台手机横竖屏是两个键，所以横竖屏天然分开。
+    // 只有在那个分辨率下改过值才会落一条，没改过的按 ui.js 的 schemeSeed() 现算起步值。
+    remoteProfile: true,    // 按分辨率自动切换方案
+    screenProfiles: {},     // { 'WxH': { fontSize, panelWidth, composerWidth, composerScale } }
     scheme: 'mono',         // 配色（黑底内的强调色）'mono' | 'amber' | 'jade' | 'rose'
     followTextColor: true,  // 正文跟随 SillyTavern 主题变量
     followEmphasisColor: true, // 粗体跟随 SillyTavern 主题变量
@@ -192,10 +195,26 @@ export function loadSettings() {
             store[key] = DEFAULT_SETTINGS[key];
         }
     }
-    // 远程那套第一次用时从电脑这套起步：开关出厂就是开的，拿出厂 19px 起步的话，
-    // 调过字号的人一连远程就会看到字号突然变了。
-    if (store.remoteFontSize === null) { store.remoteFontSize = store.fontSize; migrated = true; }
-    if (store.remotePanelWidth === null) { store.remotePanelWidth = store.panelWidth; migrated = true; }
+    // 上一版只有「电脑 / 远程」两套，远程那套存在 remoteFontSize / remotePanelWidth。
+    // 当时实测远程只见过横屏 1920×1080 这一种虚拟屏，所以原样挪进这个键；竖屏从此另起一套。
+    if (store.remoteFontSize != null || store.remotePanelWidth != null) {
+        const profiles = { ...(store.screenProfiles || {}) };
+        if (!profiles['1920x1080']) {
+            profiles['1920x1080'] = {
+                fontSize: store.remoteFontSize ?? store.fontSize,
+                panelWidth: store.remotePanelWidth ?? store.panelWidth,
+                composerWidth: store.composerWidth,
+                composerScale: store.composerScale,
+            };
+        }
+        store.screenProfiles = profiles;
+        migrated = true;
+    }
+    if ('remoteFontSize' in store || 'remotePanelWidth' in store) {
+        delete store.remoteFontSize;
+        delete store.remotePanelWidth;
+        migrated = true;
+    }
     _loaded = true;
     if (migrated) save();
     return store;
