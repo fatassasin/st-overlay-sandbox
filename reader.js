@@ -2000,8 +2000,27 @@ export function finalize() {
 
 /** 某条消息被编辑/swipe：失效该条缓存并重建 */
 export function refreshIndex(index) {
-    parseCache.delete(Number(index));
+    refreshIndices([index]);
+}
+
+/** 一次失效多条再只重建一遍（攒下来的补刷别一条一重建）。 */
+export function refreshIndices(indices) {
+    for (const i of indices) parseCache.delete(Number(i));
     rebuild(false, 'preserve');
+}
+
+/** 这些楼里哪些已经跟阅读器解析过的版本对不上了（mes 被人悄悄改过、没发事件）。
+ *  只认解析过的楼：没进过 floors 的（用户消息、系统消息）不用管。 */
+export function staleChatIndices(indices) {
+    const c = ctxRef || getCtx();
+    const chat = c && Array.isArray(c.chat) ? c.chat : [];
+    const out = [];
+    for (const i of indices) {
+        const cached = parseCache.get(i);
+        const mes = chat[i] && typeof chat[i].mes === 'string' ? chat[i].mes : null;
+        if (cached && mes !== null && cached.sig !== `${i}:${mes.length}`) out.push(i);
+    }
+    return out;
 }
 
 /** 跳到最新楼层最后片段（打开 overlay 时用）。最新一条正文按「打字速度」逐字揭示（用户要的效果）；

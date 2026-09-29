@@ -313,6 +313,13 @@
 #st-overlay-root .ov-panel-text q::before, #st-overlay-root .ov-panel-text q::after { content: none; }
 #st-overlay-root .ov-panel-text pre, #st-overlay-root .ov-panel-text img,
 #st-overlay-root .ov-panel-text table { max-width: 100%; }
+/* 正文里的内联视频（生视频插件回写）：宽不出栏、高不出可见带，竖版视频也能一屏看全。
+   --ov-video-fit 由 video.js 按正文框高度扣掉上下虚化算出来。 */
+#st-overlay-root .ov-panel-text video {
+    display: block; margin-inline: auto;
+    width: auto; height: auto; max-width: 100%;
+    max-height: var(--ov-video-fit, 80vh);
+}
 #st-overlay-root .ov-panel-text pre {
     background: rgba(0,0,0,0.45); border: 1px solid var(--ov-stroke-soft);
     border-radius: 10px; padding: 10px 12px; overflow-x: auto;

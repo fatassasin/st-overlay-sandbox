@@ -1,9 +1,11 @@
-// video.js — 阅读器里的视频：滚到就自动播一遍 + 触控点画面中间也能播
+// video.js — 阅读器里的视频：滚到就摆正再自动播一遍 + 触控点画面中间也能播
 // 职责：overlay 里所有 <video>（正文里生视频插件回写的内联视频、VN 的 <video> 片段）：
-//   1) 滚到眼前（露出至少一半）自动播放，只播一遍：不循环，同一段视频本次会话里只自动起播一次；
-//   2) 点画面中间切换播放/暂停，鼠标与手指一个样。
+//   1) 滚到眼前（露出至少一半）先把正文滚到让它居中，停稳了再自动播放，只播一遍：不循环，
+//      同一段视频本次会话里只自动起播一次。一露头就播的话，下半截还在屏外，开头那几秒等于白放；
+//   2) 正文里的视频最高不超过正文的可见带（扣掉上下虚化），比屏还高的竖版视频也能整个看全；
+//   3) 点画面中间切换播放/暂停，鼠标与手指一个样。
 //
-// 为什么要 2)：Chrome 原生 controls 对鼠标单击是「切播放」，对触控点按却只是「唤出控制条」，
+// 为什么要 3)：Chrome 原生 controls 对鼠标单击是「切播放」，对触控点按却只是「唤出控制条」，
 //   远控的触屏模式下只能去戳左下角那颗小播放键。这里不认指针类型，而是等原生先处理：
 //   点完那一拍 paused 没变 = 原生没管，才由我们来切。鼠标点击原生已切过，我们什么都不做，不会切两次。
 //
@@ -22,6 +24,10 @@ const PLAYED_CAP = 500;
 const SHOW_RATIO = 0.5;
 // 原生控制条那一条不接管，让进度条、音量、全屏按钮照常点得到。
 const CONTROLS_STRIP_PX = 48;
+// 平滑滚动的 scrollend 万一没来（被别的滚动打断、老内核没这个事件），最多等这么久就照样起播。
+const CENTER_WAIT_MS = 1200;
+// 视频上下各留一点缝，别让控制条正好压在虚化边上。
+const FIT_MARGIN_PX = 12;
 
 let bound = false;
 let scanTimer = 0;
@@ -37,6 +43,41 @@ function markPlayed(v) {
     if (!key) return;
     played.add(key);
     if (played.size > PLAYED_CAP) played.delete(played.values().next().value);
+}
+
+/** '11vh' / '40px' → px；读不懂按 0。--ov-top-fade 与 --ov-bottom-fade 由 ui.js 写成 vh。 */
+function cssLenPx(value) {
+    const m = /^\s*(-?[\d.]+)\s*(px|vh)?\s*$/.exec(String(value || ''));
+    if (!m) return 0;
+    const n = Number(m[1]) || 0;
+    return m[2] === 'vh' ? n * window.innerHeight / 100 : n;
+}
+
+/** 正文框上下虚化各占多少 px（普通楼层有遮罩；VN 等没遮罩的是 0）。 */
+function fades(box) {
+    const cs = getComputedStyle(box);
+    if ((cs.maskImage || cs.webkitMaskImage || 'none') === 'none') return { top: 0, bottom: 0 };
+    const rs = getComputedStyle(getRoot() || document.documentElement);
+    return { top: cssLenPx(rs.getPropertyValue('--ov-top-fade')), bottom: cssLenPx(rs.getPropertyValue('--ov-bottom-fade')) };
+}
+
+/** 正文滚动框里真正看得清的那一条：框夹到视口，再扣掉上下虚化遮罩。 */
+function visibleBand(box) {
+    const b = box.getBoundingClientRect();
+    const f = fades(box);
+    return { top: Math.max(0, b.top) + f.top, bottom: Math.min(window.innerHeight, b.bottom) - f.bottom };
+}
+
+/** 把「正文里视频最高多高」写成 --ov-video-fit（style.css 里给 .ov-panel-text video 当 max-height）。
+ *  用 clientHeight 而不是 rect：刚打开时面板还在上浮动画里，rect 带着 transform 会算小。 */
+function fitVideos() {
+    const box = q('#ov-panel-text');
+    if (!box) return;
+    const f = fades(box);
+    const h = Math.round(Math.min(box.clientHeight, window.innerHeight) - f.top - f.bottom - FIT_MARGIN_PX * 2);
+    if (h < 120) return;   // 框还没排好版（隐藏中 / 0 高），别把视频压成一条
+    const val = `${h}px`;
+    if (box.style.getPropertyValue('--ov-video-fit') !== val) box.style.setProperty('--ov-video-fit', val);
 }
 
 /** 视频此刻露出了多少：先夹到视口，再夹到它所在的正文滚动框。 */
@@ -70,18 +111,51 @@ function autoplay(v) {
     });
 }
 
-/** 扫一遍 overlay 里的视频，露够了、还没播过的就起播。 */
+/** 先把视频滚到可见带正中，停稳了再播。不在正文滚动框里（VN 的 CG 层）或已经在正中的直接播。
+ *  滚动途中用户自己滚走了也没关系：停下时还露够一半才播，否则这一段就算看过了。 */
+function centerThenPlay(v) {
+    const box = v.closest('#ov-panel-text');
+    const max = box ? box.scrollHeight - box.clientHeight : 0;
+    if (!box || max <= 2) { autoplay(v); return; }
+    const band = visibleBand(box);
+    const r = v.getBoundingClientRect();
+    const want = box.scrollTop + (r.top + r.bottom) / 2 - (band.top + band.bottom) / 2;
+    const target = Math.max(0, Math.min(max, Math.round(want)));
+    if (Math.abs(target - box.scrollTop) < 4) { autoplay(v); return; }
+
+    markPlayed(v);   // 先记上：平滑滚动一路派发 scroll，别让重扫再把它起一次
+    const key = videoKey(v);
+    let done = false;
+    const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        box.removeEventListener('scrollend', finish);
+        if (!getSetting('videoAutoplay') || !isVisible()) return;
+        // 滚动途中正文可能被整段重写（生图回写后的重建），元素换了新的，按 src 找回来
+        const cur = v.isConnected ? v
+            : [...(getRoot()?.querySelectorAll('video') || [])].find((x) => videoKey(x) === key);
+        if (cur && cur.paused && isShownEnough(cur)) autoplay(cur);
+    };
+    const timer = setTimeout(finish, CENTER_WAIT_MS);
+    box.addEventListener('scrollend', finish);
+    box.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+/** 扫一遍 overlay 里的视频，露够了、还没播过的就摆正起播。 */
 export function scanVideos() {
     clearTimeout(scanTimer);
     scanTimer = 0;
-    if (!getSetting('videoAutoplay') || !isVisible()) return;
+    if (!isVisible()) return;
+    fitVideos();
+    if (!getSetting('videoAutoplay')) return;
     const root = getRoot();
     if (!root) return;
     for (const v of root.querySelectorAll('video')) {
         if (!v.paused || v.closest('.ov-typing')) continue;   // 打字机每帧重写正文，元素下一帧就没了，等它写完
         const key = videoKey(v);
         if (!key || played.has(key)) continue;
-        if (isShownEnough(v)) autoplay(v);
+        if (isShownEnough(v)) { centerThenPlay(v); return; }   // 一次只摆一段，两段同时露头时先顾上面那段
     }
 }
 

@@ -11,7 +11,7 @@
 import { updateMessageBlock } from '../../../../script.js';
 import { q, insertIntoComposer, show as showOverlay, isVisible } from './overlay.js';
 import {
-    initReader, rebuild, finalize, refreshIndex, onStream, enterWaiting,
+    initReader, rebuild, finalize, refreshIndex, refreshIndices, staleChatIndices, onStream, enterWaiting,
     forceClearWaiting, abortLive, hasLiveGeneration, hasFloorForChatIndex, returnAfterStoppedReply,
     refreshReplyEcho,
 } from './reader.js';
@@ -481,7 +481,11 @@ function refreshIndexWhenIdle(i) {
     const idx = Number(i);
     if (!Number.isInteger(idx)) return;
     if (!streaming && !isStGenerating()) { collapseStaleLiveFloor(); refreshIndex(idx); return; }
-    pendingRefreshIndices.add(idx);
+    queueRefresh([idx]);
+}
+
+function queueRefresh(idxs) {
+    for (const idx of idxs) pendingRefreshIndices.add(idx);
     if (pendingRefreshTimer) return;
     pendingRefreshTimer = setInterval(() => {
         if (streaming || isStGenerating()) return;
@@ -490,8 +494,37 @@ function refreshIndexWhenIdle(i) {
         collapseStaleLiveFloor();
         const idxs = [...pendingRefreshIndices];
         pendingRefreshIndices.clear();
-        for (const n of idxs) refreshIndex(n);
+        refreshIndices(idxs);
     }, 300);
+}
+
+// 生图插件分两步回写：先把首帧图片写进 chat[i].mes 并刷新 ST 那一楼的 DOM，等视频生成完再换成 <video>，
+// 只有最后这一步才发 MESSAGE_UPDATED。只听事件的话，沙盒要等整段视频出完才连图带视频一起显示。
+// 这里盯 ST 聊天区的 DOM 改写：哪一楼被重绘了，就对一下它的 mes 跟阅读器解析过的版本还是不是同一份，
+// 不是就补刷。别的扩展改 DOM 不改 mes 的（大多数）对不上签名差，不会引起重建。
+const CHAT_REWRITE_DEBOUNCE_MS = 250;
+function watchChatRewrites() {
+    const chatEl = document.getElementById('chat');
+    if (!chatEl) return;
+    const touched = new Set();
+    let timer = 0;
+    const flush = () => {
+        timer = 0;
+        const stale = staleChatIndices([...touched]);
+        touched.clear();
+        if (!stale.length) return;
+        if (!streaming && !isStGenerating()) { collapseStaleLiveFloor(); refreshIndices(stale); }
+        else queueRefresh(stale);
+    };
+    new MutationObserver((records) => {
+        for (const r of records) {
+            // 整楼新增 / 删除的 target 是 #chat 本身，那归 RENDERED/DELETED 事件管
+            const mes = r.target.closest ? r.target.closest('.mes[mesid]') : r.target.parentElement?.closest('.mes[mesid]');
+            const idx = mes ? Number(mes.getAttribute('mesid')) : NaN;
+            if (Number.isInteger(idx)) touched.add(idx);
+        }
+        if (touched.size && !timer) timer = setTimeout(flush, CHAT_REWRITE_DEBOUNCE_MS);
+    }).observe(chatEl, { childList: true, subtree: true });
 }
 
 function runSlash(command) {
@@ -683,6 +716,7 @@ export function initBridge(ctx) {
     wireStopButtonMirror();
     wireHtmlBridge();
     initReader(ctxRef);
+    watchChatRewrites();
 
     if (!ctxRef) { console.warn('[overlay] 桥：无 context，跳过事件绑定。'); return; }
     const es = ctxRef.eventSource;
